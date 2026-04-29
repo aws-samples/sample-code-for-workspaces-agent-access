@@ -1,51 +1,52 @@
-# WorkSpaces Agent Demo
+# Sample Code for Amazon WorkSpaces Applications with Agent Access
 
-Build autonomous agents that automate desktop workflows on Amazon WorkSpaces. Agents interact with any combination of Windows applications — filling forms, transferring data between apps, navigating multi-step processes — using the Strands Agents SDK with Claude Computer Use.
+Build autonomous agents that automate desktop workflows on [Amazon WorkSpaces Applications](https://docs.aws.amazon.com/appstream2/latest/developerguide/) with Agent Access. Agents interact with any combination of applications — filling forms, transferring data between apps, navigating multi-step processes — using the Strands Agents SDK with Claude Computer Use.
+
+## Prerequisites
+The Quick Start helps you get setup with:
+- **AWS account** with permission to create Amazon WorkSpaces Applications fleets/stacks and invoke Amazon Bedrock
+- **AWS CLI v2** — [install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+- **Python 3.11+** — [install guide](https://www.python.org/downloads/)
+- **Valid AWS credentials** configured (run `aws sts get-caller-identity` to verify)
+- **bash** on Windows — the deploy step runs via [Git for Windows](https://git-scm.com/download/win) (`winget install -e --id Git.Git`) or WSL (`wsl --install`)
 
 ## Quick Start
 
-Clone the repo (or unzip a drop) on any environment with AWS CLI v2, Python 3.11+, and valid AWS credentials — your laptop, a cloud desktop, or a dev EC2 instance all work.
+Clone the repo and run the setup script from the repository root.
 
 ### macOS / Linux
 
 ```bash
-cd workspaces-agent-demo
+git clone https://github.com/aws-samples/sample-code-for-workspaces-agent-access.git
+cd sample-code-for-workspaces-agent-access
 ./scripts/setup.sh
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-cd workspaces-agent-demo
+git clone https://github.com/aws-samples/sample-code-for-workspaces-agent-access.git
+cd sample-code-for-workspaces-agent-access
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 ```
 
-The Windows setup needs a bash interpreter for the deploy step. Install [Git for Windows](https://git-scm.com/download/win) (`winget install -e --id Git.Git`) or enable WSL (`wsl --install`) and you're set.
+`setup.sh` / `setup.ps1` installs dependencies, deploys WorkSpaces resources (VPC, Fleet, Stack with AgentAccessConfig), waits for the fleet to reach RUNNING state, generates a streaming URL, and runs the demo agent.
 
-This installs dependencies, deploys WorkSpaces resources (VPC, Fleet, Stack with AgentAccessConfig), waits for the fleet to start, generates a streaming URL, and runs the demo agent.
+### Run agents again after setup
 
-To run agents again after setup:
+Use the helper to mint a fresh streaming URL (default validity: 1 hour):
 
 ```bash
 source venv/bin/activate
-
-# Read stack + fleet names from config
-STACK=$(python3 -c "import json,re; raw=re.sub(r'(?m)^\s*//.*$','',open('scripts/config.json').read()); print(json.loads(raw)['stack']['name'])")
-FLEET=$(python3 -c "import json,re; raw=re.sub(r'(?m)^\s*//.*$','',open('scripts/config.json').read()); print(json.loads(raw)['fleet']['name'])")
-
-# Generate a streaming URL (valid for 1 hour)
-STREAMING_URL=$(aws appstream create-streaming-url \
-  --stack-name "$STACK" --fleet-name "$FLEET" \
-  --user-id testuser --validity 3600 \
-  --query StreamingURL --output text)
-
-# Run the agent
+STREAMING_URL=$(scripts/streaming_url.sh)
 python3 agents/pdf_extractor_demo/agent.py --streaming-url "$STREAMING_URL"
 ```
 
 ## Demo Agents
 
 ```bash
+source venv/bin/activate
+
 # PDF extractor — uses Firefox, OpenOffice Writer, File Explorer
 python3 agents/pdf_extractor_demo/agent.py --streaming-url "$STREAMING_URL"
 
@@ -85,6 +86,7 @@ python3 agents/agent_creator/agent.py --update agents/<your_workflow>
 | `--mcp-timeout SECS` | `180` | MCP client startup timeout |
 | `--mcp-retries N` | `3` | Number of MCP connection retries |
 | `--region REGION` | auto-detect | AWS region for Bedrock calls |
+| `--mcp-region REGION` | matches `--region` | AWS region for MCP SigV4 signing. Must match the fleet region. |
 | `--no-screenshot-pruning` | off | Keep all screenshots in conversation context |
 | `--mcp-profile PROFILE` | default | AWS profile for SigV4 signing to the MCP endpoint |
 | `--llm-profile PROFILE` | default | AWS profile for Bedrock LLM calls |
@@ -92,7 +94,7 @@ python3 agents/agent_creator/agent.py --update agents/<your_workflow>
 ## Project Structure
 
 ```
-workspaces-agent-demo/
+sample-code-for-workspaces-agent-access/
 ├── agents/
 │   ├── agent_creator/          # Interactive agent builder
 │   ├── application_validation/ # Single-app validation
@@ -108,6 +110,7 @@ workspaces-agent-demo/
 │   ├── config.json             # Fleet, stack, VPC, MCP endpoint config
 │   ├── setup.sh                # One-step setup (macOS / Linux)
 │   ├── setup.ps1               # One-step setup (Windows)
+│   ├── streaming_url.sh        # Mint a fresh AppStream streaming URL
 │   ├── deploy.sh               # Deploy VPC + Fleet + Stack
 │   ├── cleanup.sh              # Tear down all resources
 │   ├── deploy_agentcore.sh     # Deploy agent to Bedrock AgentCore Runtime
@@ -208,3 +211,11 @@ The AgentCore handler accepts `streaming_url` directly from the invocation paylo
 - No resource-based policies that grant broad cross-account invoke access.
 
 For production multi-tenant deployments, add a signed-grant flow: the caller passes an opaque `session_id`, the handler resolves it against a DynamoDB table that records the issuing principal, and rejects cross-principal lookups.
+
+## References
+
+- [Amazon WorkSpaces Applications — Administration Guide](https://docs.aws.amazon.com/appstream2/latest/developerguide/) — fleets, stacks, image builders, streaming URLs
+- [Amazon WorkSpaces Applications — Getting Started](https://docs.aws.amazon.com/appstream2/latest/developerguide/getting-started.html) — end-to-end setup with sample applications
+- [Amazon WorkSpaces Applications — API Reference](https://docs.aws.amazon.com/appstream2/latest/APIReference/Welcome.html) — SDK and CLI operations
+- [Amazon Bedrock — Claude models](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html) — model IDs, inference parameters, regional availability
+- [Strands Agents SDK](https://strandsagents.com/) — the agent framework this sample builds on

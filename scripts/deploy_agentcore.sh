@@ -606,8 +606,6 @@ if [ -z "$EXEC_ROLE" ]; then
 fi
 
 if [ -n "$EXEC_ROLE" ] && [ "$EXEC_ROLE" != "None" ]; then
-  # Require SERVICE_ACTION_PREFIX so the inline policy grants access to the
-  # parameterized service (not a hardcoded internal codename).
   SERVICE_ACTION_PREFIX="${SERVICE_ACTION_PREFIX:-}"
   if [ -z "$SERVICE_ACTION_PREFIX" ]; then
     fail "SERVICE_ACTION_PREFIX env var is required (IAM action prefix for the MCP service)."
