@@ -1,0 +1,88 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Example Skill — Notepad",
+    "version": "1.0.0",
+    "description": "Example skill file showing how to describe a Windows application for the computer-use agent. Replace this with a skill for your target application."
+  },
+  "servers": [
+    {
+      "url": "desktop://localhost",
+      "description": "Windows Desktop Application"
+    }
+  ],
+  "paths": {
+    "/launch": {
+      "post": {
+        "summary": "Launch Notepad",
+        "operationId": "launchNotepad",
+        "x-agent-instructions": {
+          "steps": [
+            "Press the Windows key to open the Start Menu",
+            "Type 'notepad'",
+            "Click 'Notepad' in the search results",
+            "Wait for Notepad to open",
+            "Take a screenshot to confirm the window is visible"
+          ],
+          "visualCues": {
+            "windowTitle": "Untitled - Notepad",
+            "mainArea": "White text editing area filling most of the window"
+          }
+        }
+      }
+    },
+    "/edit/type-text": {
+      "post": {
+        "summary": "Type text into the editor",
+        "operationId": "typeText",
+        "x-agent-instructions": {
+          "steps": [
+            "Click inside the text editing area",
+            "Type the desired text using the type_text tool",
+            "Verify text appears in the editor"
+          ],
+          "tips": [
+            "Click the editing area first to ensure it has focus",
+            "For multi-line text, include newline characters in the text string"
+          ]
+        }
+      }
+    },
+    "/file/save": {
+      "post": {
+        "summary": "Save the file",
+        "operationId": "saveFile",
+        "x-agent-instructions": {
+          "steps": [
+            "Press Ctrl+S",
+            "If a Save As dialog appears, navigate to the desired folder",
+            "Click the 'File name' field and type the filename",
+            "Click Save"
+          ],
+          "verification": "Window title changes from 'Untitled' to the saved filename."
+        }
+      }
+    }
+  },
+  "x-agent-general-instructions": {
+    "applicationOverview": {
+      "name": "Notepad",
+      "type": "Text editor",
+      "purpose": "Create and edit plain text files"
+    },
+    "windowLayout": {
+      "titleBar": "Top of window — shows filename and 'Notepad'",
+      "menuBar": "File, Edit, Format, View, Help",
+      "editingArea": "Large white area filling most of the window",
+      "statusBar": "Bottom of window — shows cursor position"
+    },
+    "keyboardShortcuts": {
+      "Ctrl+S": "Save",
+      "Ctrl+Z": "Undo",
+      "Ctrl+A": "Select all",
+      "Ctrl+C": "Copy",
+      "Ctrl+V": "Paste",
+      "Alt+F4": "Close"
+    }
+  }
+}

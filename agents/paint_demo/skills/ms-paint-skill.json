@@ -1,0 +1,412 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "MS Paint - Computer Use Agent Skill",
+    "version": "4.4.0",
+    "description": "Instructions for a computer use agent to interact with Microsoft Paint on Windows via screenshot-based pixel coordination."
+  },
+  "servers": [
+    {
+      "url": "desktop://localhost",
+      "description": "Windows Desktop Application"
+    }
+  ],
+  "paths": {
+    "/launch": {
+      "post": {
+        "summary": "Launch MS Paint",
+        "operationId": "launchPaint",
+        "x-agent-instructions": {
+          "steps": [
+            "Click the search bar on the taskbar",
+            "Type 'paint'",
+            "Click 'Paint' in the search results (classic Paint, not Paint 3D)",
+            "If the canvas isn't fully visible, maximize the window",
+            "Take ONE screenshot to confirm Paint is open and note canvas coordinates"
+          ],
+          "visualCues": {
+            "windowTitle": "Untitled - Paint",
+            "canvas": "Large white rectangle in the center of the window"
+          }
+        }
+      }
+    },
+    "/tools/select": {
+      "post": {
+        "summary": "Select a drawing tool from the ribbon",
+        "operationId": "selectTool",
+        "x-agent-instructions": {
+          "ribbonLayout": {
+            "description": "Ribbon sections left-to-right: Clipboard \u2192 Image \u2192 Tools \u2192 Brushes \u2192 Shapes \u2192 Size \u2192 Colors",
+            "sections": [
+              {
+                "name": "Tools",
+                "position": "Center-left",
+                "tools": [
+                  "Pencil",
+                  "Fill (bucket)",
+                  "Text (A)",
+                  "Eraser",
+                  "Color picker",
+                  "Magnifier"
+                ]
+              },
+              {
+                "name": "Shapes",
+                "position": "Center-right, largest section",
+                "tools": [
+                  "Line",
+                  "Curve",
+                  "Oval",
+                  "Rectangle",
+                  "Rounded rectangle",
+                  "Polygon",
+                  "Triangle",
+                  "Diamond",
+                  "Pentagon",
+                  "Hexagon",
+                  "Arrows",
+                  "Stars",
+                  "Heart"
+                ],
+                "dropdowns": {
+                  "outline": "Controls border style \u2014 Solid color, No outline, etc.",
+                  "fill": "Controls interior \u2014 No fill, Solid color, etc."
+                }
+              },
+              {
+                "name": "Size",
+                "position": "Right of Shapes",
+                "tools": [
+                  "Thickness dropdown"
+                ]
+              },
+              {
+                "name": "Colors",
+                "position": "Far right",
+                "tools": [
+                  "Color 1 box (foreground)",
+                  "Color 2 box (background)",
+                  "30 color swatches (3 rows \u00d7 10)",
+                  "Edit colors button \u2014 AVOID"
+                ]
+              }
+            ]
+          },
+          "howToSelect": "Single-click the tool icon. Do NOT screenshot to verify \u2014 trust your click and proceed immediately to the next action.",
+          "trustRule": "Tool selections are reliable UI operations. NEVER take a screenshot to verify a tool was selected."
+        }
+      }
+    },
+    "/colors/select": {
+      "post": {
+        "summary": "Select foreground and background colors",
+        "operationId": "selectColor",
+        "x-agent-instructions": {
+          "rules": [
+            "Left-click a swatch = sets Color 1 (outline/foreground)",
+            "Right-click a swatch = sets Color 2 (fill/background)",
+            "Use ONLY the 30 swatches in the palette grid \u2014 NEVER click 'Edit colors'",
+            "If Edit Colors dialog opens accidentally, press Escape IMMEDIATELY",
+            "Color selections are reliable \u2014 NEVER take a screenshot to verify a color was set"
+          ],
+          "standardSwatchLocations": {
+            "topRow": "black, white, light gray, gray, dark red, red, orange, yellow, light green, green",
+            "middleRow": "darker/muted variants \u2014 brown is left-center area, dark green is right area",
+            "bottomRow": "light/pastel variants \u2014 light blue is bottom row, right side"
+          }
+        }
+      }
+    },
+    "/tools/fill": {
+      "post": {
+        "summary": "Fill an enclosed area with a solid color",
+        "operationId": "useFill",
+        "x-agent-instructions": {
+          "steps": [
+            "Click the Fill (bucket) icon in the Tools section",
+            "Left-click the desired color swatch to set Color 1",
+            "Click once inside the target area on the canvas"
+          ],
+          "warning": "Target area MUST be completely enclosed. If color leaks, press Ctrl+Z immediately."
+        }
+      }
+    },
+    "/tools/shapes": {
+      "post": {
+        "summary": "Draw geometric shapes",
+        "operationId": "useShapes",
+        "x-agent-instructions": {
+          "setup": [
+            "1. Click the desired shape icon in the Shapes section",
+            "2. Left-click a color swatch for Color 1 (outline)",
+            "3. Right-click a color swatch for Color 2 (fill)",
+            "4. Set the Outline dropdown (Solid color or No outline)",
+            "5. Set the Fill dropdown (Solid color or No fill)",
+            "6. Optionally set thickness via Size dropdown"
+          ],
+          "drawing": [
+            "Click-and-hold at the start corner",
+            "Drag to the opposite corner",
+            "Release to complete",
+            "Click outside the shape to finalize it"
+          ],
+          "batchingRule": "When drawing multiple similar shapes (e.g., 4 legs, multiple windows): select tool and set colors ONCE, then draw ALL shapes in sequence without clicking outside between each one. Click outside only after the final shape. Do NOT screenshot between individual shapes.",
+          "tips": [
+            "Hold Shift to constrain proportions (circle, square)",
+            "Color 1 = outline, Color 2 = fill",
+            "Once you click outside, the shape is permanent \u2014 use Ctrl+Z to undo if wrong"
+          ]
+        }
+      }
+    },
+    "/tools/text": {
+      "post": {
+        "summary": "Add text to the canvas",
+        "operationId": "useText",
+        "x-agent-instructions": {
+          "steps": [
+            "Click the Text tool (A icon) in Tools section",
+            "Click-and-drag to create a text box",
+            "Type your text",
+            "Click outside to commit \u2014 text becomes permanent pixels"
+          ],
+          "warning": "Text cannot be edited after clicking outside. If wrong, press Ctrl+Z immediately."
+        }
+      }
+    },
+    "/tools/eraser": {
+      "post": {
+        "summary": "Erase parts of the drawing",
+        "operationId": "useEraser",
+        "x-agent-instructions": {
+          "steps": [
+            "Click the Eraser icon in the Tools section",
+            "Select eraser size from the Size dropdown",
+            "Click-and-drag over the area to erase"
+          ],
+          "note": "Eraser replaces pixels with Color 2 (default white)."
+        }
+      }
+    },
+    "/canvas/operations": {
+      "post": {
+        "summary": "Canvas-level operations",
+        "operationId": "canvasOps",
+        "x-agent-instructions": {
+          "shortcuts": {
+            "Ctrl+Z": "Undo \u2014 press multiple times for multiple undos. Do NOT screenshot after pressing.",
+            "Ctrl+Y": "Redo",
+            "Ctrl+S": "Save",
+            "Ctrl+A": "Select all",
+            "Escape": "Close/dismiss any open dialog immediately",
+            "Alt+Tab": "Switch windows / bring Paint to front"
+          }
+        }
+      }
+    },
+    "/file/save": {
+      "post": {
+        "summary": "Save the painting to a file",
+        "operationId": "saveFile",
+        "x-agent-instructions": {
+          "steps": [
+            "Press Ctrl+S",
+            "If Save As dialog appears: navigate to desired folder",
+            "Triple-click the 'File name' field to select all existing text, then type new filename",
+            "If triple-click fails: click field + press Ctrl+A, then type filename",
+            "Verify 'Save as type' is PNG",
+            "Click Save button ONCE and wait for dialog to close"
+          ],
+          "commonIssues": {
+            "filenameNotChanging": "Field was not properly selected \u2014 triple-click the field again before typing",
+            "saveButtonDisabled": "Invalid filename characters \u2014 use only letters and numbers",
+            "dialogNotClosing": "Wait 2-3 seconds after clicking Save before taking any action"
+          },
+          "verification": "Window title changes to '<filename> - Paint' when save succeeds. Take ONE screenshot to confirm."
+        }
+      }
+    },
+    "/file/save_dialog": {
+      "post": {
+        "summary": "Handle Save As dialog efficiently",
+        "operationId": "handleSaveDialog",
+        "x-agent-instructions": {
+          "fieldSelection": [
+            "Triple-click filename field to select all existing text",
+            "If triple-click fails: click field + Ctrl+A",
+            "Type new filename immediately after selection"
+          ],
+          "sequence": "Triple-click filename field \u2192 type name \u2192 verify PNG format \u2192 click Save ONCE \u2192 wait for close",
+          "commonIssues": {
+            "filenameNotChanging": "Field was not properly selected \u2014 try triple-click again",
+            "saveButtonDisabled": "Invalid filename characters \u2014 use only letters/numbers",
+            "dialogNotClosing": "Wait 2-3 seconds after clicking Save \u2014 do not click again"
+          }
+        }
+      }
+    },
+    "/window/recovery": {
+      "post": {
+        "summary": "Recover from stuck states and unexpected dialogs",
+        "operationId": "recoverWindow",
+        "x-agent-instructions": {
+          "steps": [
+            "1. Press Escape to close any open dialog",
+            "2. Press Alt+Tab to bring Paint to front",
+            "3. Take ONE screenshot to assess current state (counts against budget)",
+            "4. If canvas zoom is wrong: View tab \u2192 click '100%'",
+            "5. Resume from the last successfully completed step"
+          ],
+          "editColorsDialog": "If the Edit Colors dialog appears (color spectrum, RGB sliders, hex field): press Escape IMMEDIATELY. Do not click anything inside it."
+        }
+      }
+    }
+  },
+  "x-agent-general-instructions": {
+    "screenshotBudgetEnforcement": {
+      "critical": true,
+      "taskFailureCondition": "Exceeding the screenshot budget is an AUTOMATIC TASK FAILURE regardless of drawing quality.",
+      "mandatoryCountingProtocol": [
+        "Before EVERY screenshot, you MUST state: 'Screenshot count check: I have taken X screenshots so far. My budget is Y. Taking this will be X+1 of Y.'",
+        "If X+1 > Y, you MUST state: 'BUDGET EXCEEDED \u2014 NOT TAKING SCREENSHOT' and continue without taking it.",
+        "Maintain a running count in every response where a screenshot is considered."
+      ],
+      "rule": "You have a MAXIMUM screenshot budget specified in each task. EVERY screenshot counts against this budget. Exceeding the budget means you have FAILED the task regardless of drawing quality.",
+      "maxTotal": 3,
+      "takeScreenshotAfter": [
+        "Launching Paint and maximizing the window (to establish canvas coordinates) \u2014 Screenshot #1",
+        "Completing ALL elements of the entire drawing \u2014 not individual elements or phases \u2014 Screenshot #2",
+        "Save confirmed (window title shows filename) \u2014 Screenshot #3"
+      ],
+      "neverScreenshotAfter": [
+        "Clicking a tool icon \u2014 tool selections are reliable, trust them",
+        "Clicking a color swatch \u2014 color selections are reliable, trust them",
+        "Setting a dropdown (Fill, Outline, Size) \u2014 dropdown settings are reliable, trust them",
+        "Pressing Ctrl+Z",
+        "Pressing Escape",
+        "Typing text or search terms",
+        "Drawing a single element when more elements remain in the same batch",
+        "Clicking outside to finalize a shape",
+        "Any predictable UI interaction"
+      ],
+      "trustPredictableActions": "Tool selections, color selections, and dropdown settings always work. Do NOT verify them with screenshots. Proceed directly to the next action after any UI interaction.",
+      "violationIndicator": "More than 3 screenshots total means you are screenshotting too often \u2014 task is FAILED."
+    },
+    "actionBatching": {
+      "coreRule": "Complete entire workflows without intermediate verification screenshots. Trust all UI actions.",
+      "trustUIActions": "Tool selections, color selections, and dropdown settings are reliable predictable operations. Do NOT screenshot to verify any of them.",
+      "mandatoryBatches": {
+        "launchPaint": "Search \u2192 click Paint \u2192 screenshot to check canvas",
+        "toolSetup": "Select tool \u2192 set Color 1 \u2192 set Color 2 \u2192 set Fill/Outline options \u2192 THEN draw (no screenshot between setup steps)",
+        "drawShape": "Click start \u2192 drag to end \u2192 release \u2192 click outside \u2192 THEN optionally screenshot only if entire drawing is complete",
+        "drawMultipleSimilarShapes": "Select tool \u2192 set colors/options ONCE \u2192 draw shape 1 \u2192 draw shape 2 \u2192 draw shape 3 \u2192 ... \u2192 click outside ONCE after last shape \u2192 THEN optionally screenshot only if entire drawing is complete",
+        "exampleLegs": "Select Line tool \u2192 set black Color 1 \u2192 draw leg 1 \u2192 draw leg 2 \u2192 draw leg 3 \u2192 draw leg 4 \u2192 click outside once \u2014 NO screenshots between or after individual legs until ALL drawing is complete",
+        "fillArea": "Select fill tool \u2192 click swatch \u2192 click canvas area \u2192 THEN screenshot only if this completes the drawing phase",
+        "undoRetry": "Ctrl+Z \u2192 fix state \u2192 redraw (no screenshot between)",
+        "saveDialog": "Triple-click filename field \u2192 type name \u2192 verify PNG \u2192 click Save ONCE \u2192 wait for close \u2192 THEN screenshot (#3) to confirm"
+      },
+      "antiPattern": "Do NOT treat each line/shape/element as a separate phase requiring its own screenshot. Do NOT screenshot after selecting a tool. Do NOT screenshot after setting a color. Group all similar elements (all legs, all windows, all clouds) into a single batch."
+    },
+    "toolStateChecklist": {
+      "beforeShapes": [
+        "Correct shape tool selected?",
+        "Color 1 set to intended outline color?",
+        "Color 2 set to intended fill color?",
+        "Outline dropdown set correctly?",
+        "Fill dropdown set correctly (Solid color vs No fill)?"
+      ],
+      "beforeFill": [
+        "Fill/bucket tool selected?",
+        "Color 1 set to desired fill color?",
+        "Target area completely enclosed (no gaps)?"
+      ],
+      "beforeFreehand": [
+        "Pencil or Brush tool selected?",
+        "Color 1 set to drawing color?",
+        "Size/thickness appropriate?"
+      ],
+      "recoveryOrder": "If state is wrong: set colors FIRST \u2192 set tool options SECOND \u2192 select tool THIRD \u2192 draw LAST"
+    },
+    "errorRecovery": {
+      "editColorsDialogOpened": {
+        "cause": "Clicked 'Edit colors' button instead of a color swatch",
+        "prevention": "Click only within the 30-swatch grid area, not near the 'Edit colors' button below it",
+        "recovery": "Press Escape IMMEDIATELY. Do not interact with any field inside the dialog."
+      },
+      "wrongDrawingLocation": {
+        "cause": "Incorrect coordinates used",
+        "prevention": "Plan all coordinates from canvas_left/top/width/height before drawing anything",
+        "recovery": "Press Ctrl+Z immediately. Do not click again first."
+      },
+      "colorLeakOnFill": {
+        "cause": "Boundary has a gap \u2014 fill flooded larger area than intended",
+        "prevention": "Ensure all shape outlines are fully closed before filling",
+        "recovery": "Press Ctrl+Z immediately. Find the gap, close it with pencil/line tool, then fill again."
+      },
+      "wrongToolSelected": {
+        "cause": "Clicked wrong tool icon in ribbon",
+        "recovery": "Press Ctrl+Z to undo. Click the correct tool, then redraw."
+      },
+      "shapeNotFinalized": {
+        "cause": "Shape still has selection handles \u2014 not yet committed",
+        "recovery": "Click on an empty canvas area (away from the shape) to finalize/deselect."
+      },
+      "unexpectedDialog": {
+        "cause": "Accidental click on a menu or button that opens a dialog",
+        "recovery": "Press Escape to dismiss. Do not interact with dialog contents."
+      },
+      "saveDialogFilenameNotChanging": {
+        "cause": "File name field was not properly selected before typing",
+        "recovery": "Triple-click the filename field again to select all text, then type the desired filename."
+      },
+      "saveDialogNotClosing": {
+        "cause": "Save operation is processing or an error occurred",
+        "recovery": "Wait 2-3 seconds. Do not click Save again. Do not take a screenshot yet."
+      },
+      "excessiveScreenshots": {
+        "cause": "Agent verifying predictable UI actions with screenshots",
+        "prevention": "Trust all tool selections, color selections, and dropdown settings \u2014 never screenshot to verify them",
+        "recovery": "Stop taking screenshots immediately. Count remaining budget. Continue drawing without verification screenshots."
+      }
+    },
+    "drawingStrategy": [
+      "1. Fill background first (entire canvas with sky color)",
+      "2. Draw large background divisions (ground rectangle)",
+      "3. Add major structural elements (house, sun)",
+      "4. Add medium details (door, window, tree trunk)",
+      "5. Add small details and accents last",
+      "6. Text labels go last"
+    ],
+    "coordinatePlanning": {
+      "description": "After the launch screenshot, note canvas top-left corner and dimensions from the status bar. Plan ALL coordinates before drawing \u2014 do not discover coordinates by trial and error.",
+      "typicalLayout": "On a typical 1920x1080 window, canvas top-left is ~(80, 150) and canvas is ~1100x700 pixels.",
+      "planningStep": "From the launch screenshot: identify canvas_left, canvas_top, canvas_width, canvas_height. Derive ALL element coordinates from these values before drawing anything.",
+      "referenceCoordinates": {
+        "canvasTopLeft": "(~80, ~150)",
+        "canvasBottomRight": "(~1180, ~850)",
+        "canvasCenter": "(~630, ~500)",
+        "bodyOvalCenter": "(~650, ~450)",
+        "headCircleCenter": "(~480, ~420)",
+        "legStartY": "~510 (bottom of body oval)",
+        "legEndY": "~570",
+        "legXPositions": "[570, 610, 660, 700]",
+        "tailStart": "(~730, ~420)",
+        "tailEnd": "(~770, ~380)"
+      },
+      "grid": {
+        "top": "Rows 0\u201333% height \u2014 sky, sun",
+        "middle": "Rows 33\u201366% height \u2014 house body",
+        "bottom": "Rows 66\u2013100% height \u2014 ground, tree base"
+      }
+    },
+    "keyboardShortcuts": {
+      "Ctrl+Z": "Undo (repeatable)",
+      "Ctrl+Y": "Redo",
+      "Ctrl+S": "Save",
+      "Ctrl+A": "Select all",
+      "Escape": "Dismiss any dialog",
+      "Alt+Tab": "Switch windows"
+    }
+  }
+}

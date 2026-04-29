@@ -1,0 +1,590 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Desktop Application Validation - Computer Use Agent Skill",
+    "version": "1.0.0",
+    "description": "Instructions for a computer use agent to launch and validate multiple Windows desktop applications via the Start Menu, confirming each opens and is functional."
+  },
+  "servers": [
+    {
+      "url": "desktop://localhost",
+      "description": "Windows Desktop Application"
+    }
+  ],
+  "paths": {
+    "/launch/start-menu": {
+      "post": {
+        "summary": "Open the Windows Start Menu and search for an application",
+        "operationId": "launchViaStartMenu",
+        "x-agent-instructions": {
+          "steps": [
+            "Click the Windows Start button (bottom-left of taskbar) OR press the Windows key",
+            "Wait for the Start Menu to open",
+            "Type the application name to search \u2014 Windows Search is instant, no need to click a search box first",
+            "Click the top result that matches the application name",
+            "Wait 3-5 seconds for the application to launch",
+            "Take a screenshot to confirm the application opened"
+          ],
+          "tips": [
+            "If the Start Menu closes unexpectedly, click the Start button again",
+            "If the wrong app appears in search results, refine the search term",
+            "Some apps may take longer to launch \u2014 wait up to 10 seconds before declaring failure",
+            "If nothing happens after clicking, try double-clicking the result"
+          ],
+          "verification": "Take a screenshot after launch. Confirm the application window is visible and not showing an error dialog."
+        }
+      }
+    },
+    "/launch/firefox": {
+      "post": {
+        "summary": "Launch Mozilla Firefox browser",
+        "operationId": "launchFirefox",
+        "x-agent-instructions": {
+          "steps": [
+            "Press the Windows key to open Start Menu",
+            "Type 'firefox'",
+            "Click 'Firefox' or 'Mozilla Firefox' in the search results",
+            "Wait for Firefox to open \u2014 may take 5-10 seconds on first launch",
+            "If a 'Set as default browser' dialog appears, click 'Not now' or 'Skip'",
+            "Wait for the browser home page or new tab page to load",
+            "Take a screenshot to confirm Firefox is open"
+          ],
+          "validationCriteria": {
+            "success": [
+              "Firefox window visible with address bar at the top",
+              "Menu/toolbar visible",
+              "Home page, new tab page, or blank page loaded",
+              "No crash reporter window"
+            ],
+            "failure": [
+              "Firefox crash reporter dialog appears",
+              "White/blank window that never loads",
+              "Safe mode dialog appearing repeatedly",
+              "Application fails to open"
+            ]
+          },
+          "commonDialogs": {
+            "defaultBrowserPrompt": "Click 'Not now' or 'Skip' \u2014 this is cosmetic, not a failure",
+            "importDataPrompt": "Click 'Cancel' or 'Skip' \u2014 not needed for validation",
+            "updateAvailable": "Click 'Later' or dismiss \u2014 not needed for validation",
+            "restoreSession": "Click 'Start New Session' to proceed cleanly"
+          },
+          "additionalValidation": [
+            "Click the address bar",
+            "Type 'about:blank' and press Enter",
+            "Confirm the page loads (blank page is a valid response)"
+          ],
+          "tips": [
+            "Firefox may prompt to import bookmarks or set as default \u2014 dismiss all such dialogs",
+            "If Firefox opens in safe mode, close it and reopen normally"
+          ],
+          "verification": "Screenshot showing Firefox window with visible address bar. Confirm no crash dialogs."
+        }
+      }
+    },
+    "/launch/notepadplusplus": {
+      "post": {
+        "summary": "Launch Notepad++",
+        "operationId": "launchNotepadPlusPlus",
+        "x-agent-instructions": {
+          "steps": [
+            "Press the Windows key to open Start Menu",
+            "Type 'notepad++'",
+            "Click 'Notepad++' in the search results",
+            "Wait for Notepad++ to open \u2014 usually very fast (1-3 seconds)",
+            "If an update dialog appears, click 'Cancel' or 'No'",
+            "Take a screenshot to confirm Notepad++ is open"
+          ],
+          "validationCriteria": {
+            "success": [
+              "Notepad++ window visible with title bar showing 'Notepad++'",
+              "Menu bar visible (File, Edit, Search, View, Encoding, Language, etc.)",
+              "Text editing area visible",
+              "Tab bar visible at the top of the editing area"
+            ],
+            "failure": [
+              "Application fails to open",
+              "Error dialog about missing DLL or runtime",
+              "Window appears but is completely unresponsive"
+            ]
+          },
+          "additionalValidation": [
+            "Click inside the text editing area",
+            "Type a few characters (e.g., 'test')",
+            "Confirm characters appear in the editor",
+            "Press Ctrl+Z to undo the typed text"
+          ],
+          "commonDialogs": {
+            "updateAvailable": "Click 'No' or 'Cancel' to dismiss",
+            "sessionRestore": "Click 'OK' to restore previous session or 'Cancel' to start fresh \u2014 both are fine"
+          },
+          "tips": [
+            "Notepad++ launches quickly \u2014 if it takes more than 5 seconds, something may be wrong",
+            "The update notification on startup is normal behavior"
+          ],
+          "verification": "Screenshot showing Notepad++ with visible menu bar and editing area."
+        }
+      }
+    },
+    "/launch/scalc": {
+      "post": {
+        "summary": "Launch OpenOffice Calc (scalc)",
+        "operationId": "launchSCalc",
+        "x-agent-instructions": {
+          "steps": [
+            "Press the Windows key to open Start Menu",
+            "Type 'openoffice calc' or 'calc'",
+            "Click 'OpenOffice Calc' in the search results",
+            "Alternatively, search for 'scalc' if a direct shortcut exists",
+            "Wait for OpenOffice Calc to open \u2014 may take 5-10 seconds on first launch",
+            "If a 'Welcome' or 'Registration' dialog appears, click 'Close' or 'Skip'",
+            "Take a screenshot to confirm OpenOffice Calc is open"
+          ],
+          "validationCriteria": {
+            "success": [
+              "OpenOffice Calc window visible",
+              "Menu bar visible (File, Edit, View, Insert, Format, etc.)",
+              "Spreadsheet grid visible with cells",
+              "Formula bar visible",
+              "Sheet tabs visible at the bottom"
+            ],
+            "failure": [
+              "Application fails to open",
+              "Error about missing Java runtime (may prevent some features but app still works)",
+              "Document recovery dialog loops without resolving"
+            ]
+          },
+          "additionalValidation": [
+            "Click on cell A1",
+            "Type a number (e.g., '123')",
+            "Press Enter",
+            "Click on cell B1",
+            "Type '=A1*2' and press Enter",
+            "Confirm cell B1 shows '246'",
+            "Press Ctrl+Z twice to undo"
+          ],
+          "commonDialogs": {
+            "registrationPrompt": "Click 'Skip' or close the dialog",
+            "documentRecovery": "If file recovery dialog appears, click 'Discard' or 'Cancel'",
+            "javaRequired": "Click 'OK' to acknowledge \u2014 this is a warning, not a failure"
+          },
+          "tips": [
+            "OpenOffice apps share a startup process \u2014 the first one to launch may be slower",
+            "If 'scalc' is listed as a program shortcut, use that directly"
+          ],
+          "verification": "Screenshot showing OpenOffice Calc spreadsheet grid with formula bar visible."
+        }
+      }
+    },
+    "/launch/sdraw": {
+      "post": {
+        "summary": "Launch OpenOffice Draw (sdraw)",
+        "operationId": "launchSDraw",
+        "x-agent-instructions": {
+          "steps": [
+            "Press the Windows key to open Start Menu",
+            "Type 'openoffice draw' or 'draw'",
+            "Click 'OpenOffice Draw' in the search results",
+            "Alternatively, search for 'sdraw' if a direct shortcut exists",
+            "Wait for OpenOffice Draw to open",
+            "Take a screenshot to confirm OpenOffice Draw is open"
+          ],
+          "validationCriteria": {
+            "success": [
+              "OpenOffice Draw window visible",
+              "Menu bar visible (File, Edit, View, Insert, Format, etc.)",
+              "Drawing canvas visible (white page area)",
+              "Drawing toolbars visible on the left or bottom",
+              "Page panel visible on the side"
+            ],
+            "failure": [
+              "Application fails to open",
+              "Blank/crashed window",
+              "Only error dialogs visible"
+            ]
+          },
+          "additionalValidation": [
+            "Click on the drawing canvas area",
+            "Confirm the canvas is clickable and the cursor changes appropriately"
+          ],
+          "tips": [
+            "OpenOffice Draw is the vector drawing component \u2014 it should show a blank page canvas",
+            "If 'sdraw' is listed as a program shortcut, use that directly"
+          ],
+          "verification": "Screenshot showing OpenOffice Draw with visible canvas and drawing tools."
+        }
+      }
+    },
+    "/launch/simpress": {
+      "post": {
+        "summary": "Launch OpenOffice Impress (simpress)",
+        "operationId": "launchSImpress",
+        "x-agent-instructions": {
+          "steps": [
+            "Press the Windows key to open Start Menu",
+            "Type 'openoffice impress' or 'impress'",
+            "Click 'OpenOffice Impress' in the search results",
+            "Alternatively, search for 'simpress' if a direct shortcut exists",
+            "Wait for OpenOffice Impress to open \u2014 it may show a template/wizard dialog",
+            "If a template or presentation wizard dialog appears, click 'Blank Presentation' and then 'OK' or 'Create'",
+            "Take a screenshot to confirm OpenOffice Impress is open"
+          ],
+          "validationCriteria": {
+            "success": [
+              "OpenOffice Impress window visible",
+              "Menu bar visible",
+              "Slide editing area visible in center",
+              "Slide panel visible on the left",
+              "Properties/formatting panel visible on the right (optional)"
+            ],
+            "failure": [
+              "Application fails to open",
+              "Wizard dialog loops without resolving",
+              "Blank crashed window"
+            ]
+          },
+          "additionalValidation": [
+            "Click on the main slide editing area",
+            "Confirm the slide canvas is interactive"
+          ],
+          "commonDialogs": {
+            "presentationWizard": "Click through to 'Create' a blank presentation",
+            "templateSelector": "Select 'Blank' and click OK"
+          },
+          "tips": [
+            "Impress may show a template chooser \u2014 this is normal startup behavior",
+            "If 'simpress' is listed as a program shortcut, use that directly"
+          ],
+          "verification": "Screenshot showing OpenOffice Impress with slide editing area visible."
+        }
+      }
+    },
+    "/launch/smath": {
+      "post": {
+        "summary": "Launch OpenOffice Math (smath)",
+        "operationId": "launchSMath",
+        "x-agent-instructions": {
+          "steps": [
+            "Press the Windows key to open Start Menu",
+            "Type 'openoffice math' or 'math'",
+            "Click 'OpenOffice Math' in the search results",
+            "Alternatively, search for 'smath' if a direct shortcut exists",
+            "Wait for OpenOffice Math to open",
+            "Take a screenshot to confirm OpenOffice Math is open"
+          ],
+          "validationCriteria": {
+            "success": [
+              "OpenOffice Math window visible",
+              "Menu bar visible",
+              "Formula rendering area visible (top portion)",
+              "Formula input/command area visible (bottom portion)",
+              "Elements panel may be visible on the left or right"
+            ],
+            "failure": [
+              "Application fails to open",
+              "Only error dialogs visible",
+              "Window appears but formula area is not shown"
+            ]
+          },
+          "additionalValidation": [
+            "Click in the formula input area (bottom pane)",
+            "Type a simple formula: 'a + b = c'",
+            "Confirm it renders in the preview area above"
+          ],
+          "tips": [
+            "OpenOffice Math is for creating mathematical formulas \u2014 it has a unique two-pane interface",
+            "If 'smath' is listed as a program shortcut, use that directly",
+            "The app may be less commonly known \u2014 if search returns no results, try 'openoffice math'"
+          ],
+          "verification": "Screenshot showing OpenOffice Math with formula rendering area and input area visible."
+        }
+      }
+    },
+    "/launch/soffice": {
+      "post": {
+        "summary": "Launch OpenOffice Start Center (soffice)",
+        "operationId": "launchSOffice",
+        "x-agent-instructions": {
+          "steps": [
+            "Press the Windows key to open Start Menu",
+            "Type 'openoffice'",
+            "Click 'OpenOffice' or 'OpenOffice Start Center' in the search results",
+            "Alternatively, search for 'soffice' if a direct shortcut exists",
+            "Wait for the OpenOffice Start Center to open",
+            "Take a screenshot to confirm the Start Center is open"
+          ],
+          "validationCriteria": {
+            "success": [
+              "OpenOffice Start Center window visible",
+              "List of recent documents visible (or empty state message)",
+              "Buttons/icons for creating new documents visible (Writer, Calc, Impress, Draw, Math, Base)",
+              "Menu bar visible"
+            ],
+            "failure": [
+              "Application fails to open",
+              "Crash or error dialog",
+              "Only a blank window with no UI"
+            ]
+          },
+          "tips": [
+            "The OpenOffice Start Center is the hub application that links to all OpenOffice components",
+            "If 'soffice' is a direct shortcut, it may launch this Start Center",
+            "Recent documents showing is normal \u2014 the app is working correctly"
+          ],
+          "verification": "Screenshot showing OpenOffice Start Center with document type icons or recent files visible."
+        }
+      }
+    },
+    "/launch/sweb": {
+      "post": {
+        "summary": "Launch OpenOffice Writer Web (sweb) or Web component",
+        "operationId": "launchSWeb",
+        "x-agent-instructions": {
+          "steps": [
+            "Press the Windows key to open Start Menu",
+            "Type 'sweb' or 'openoffice web'",
+            "Click the matching result in search",
+            "If no direct result, try searching for the full shortcut name",
+            "Wait for the application to open",
+            "Take a screenshot to confirm the application is open"
+          ],
+          "validationCriteria": {
+            "success": [
+              "Application window opens without error",
+              "Menu bar visible",
+              "Some form of editing or viewing area visible"
+            ],
+            "failure": [
+              "No matching application found in search",
+              "Application fails to open",
+              "Error dialog on launch"
+            ]
+          },
+          "tips": [
+            "'sweb' may refer to OpenOffice Writer in web/HTML editing mode",
+            "It may also be a custom application or shortcut on this system",
+            "If the search returns no result, document this as 'not found' in the report",
+            "Try alternate search terms: 'web', 'openoffice writer web', 'sweb'"
+          ],
+          "verification": "Screenshot showing whatever application opened, or screenshot of failed search results to document the state."
+        }
+      }
+    },
+    "/launch/swriter": {
+      "post": {
+        "summary": "Launch OpenOffice Writer (swriter)",
+        "operationId": "launchSWriter",
+        "x-agent-instructions": {
+          "steps": [
+            "Press the Windows key to open Start Menu",
+            "Type 'openoffice writer' or 'writer'",
+            "Click 'OpenOffice Writer' in the search results",
+            "Alternatively, search for 'swriter' if a direct shortcut exists",
+            "Wait for OpenOffice Writer to open",
+            "If a document recovery dialog appears, click 'Discard' or 'Cancel'",
+            "Take a screenshot to confirm OpenOffice Writer is open"
+          ],
+          "validationCriteria": {
+            "success": [
+              "OpenOffice Writer window visible",
+              "Menu bar visible (File, Edit, View, Insert, Format, Styles, etc.)",
+              "Document editing area visible (white page)",
+              "Formatting toolbar visible",
+              "Status bar visible at the bottom"
+            ],
+            "failure": [
+              "Application fails to open",
+              "Error dialog about missing components",
+              "Document recovery loop"
+            ]
+          },
+          "additionalValidation": [
+            "Click in the document editing area",
+            "Type a few words (e.g., 'Hello World')",
+            "Confirm text appears in the document",
+            "Press Ctrl+Z to undo"
+          ],
+          "commonDialogs": {
+            "documentRecovery": "Click 'Discard' to start fresh \u2014 this is not a failure",
+            "registrationPrompt": "Click 'Skip' or close"
+          },
+          "tips": [
+            "OpenOffice Writer is the most commonly used component \u2014 it should launch reliably",
+            "If 'swriter' is listed as a program shortcut, use that directly"
+          ],
+          "verification": "Screenshot showing OpenOffice Writer with document area and toolbar visible."
+        }
+      }
+    },
+    "/validate/application": {
+      "post": {
+        "summary": "Perform basic validation steps for any open application",
+        "operationId": "validateApplication",
+        "x-agent-instructions": {
+          "steps": [
+            "Confirm the window title is visible and contains an expected application name",
+            "Confirm the main menu bar or toolbar is visible and not greyed out",
+            "Confirm there are no blocking error dialogs",
+            "Perform at least one interactive action (click, type, or navigate a menu)",
+            "Confirm the application responds to the interaction",
+            "Take a screenshot to record the validated state"
+          ],
+          "passCriteria": [
+            "Application window is open",
+            "UI elements are visible and not blocked by errors",
+            "Application responds to at least one user interaction",
+            "No crash dialogs or fatal error messages"
+          ],
+          "failCriteria": [
+            "Application window never opened",
+            "Application shows a crash reporter or fatal error dialog",
+            "Application is completely unresponsive (frozen) for more than 15 seconds",
+            "Application immediately closes after opening"
+          ],
+          "tips": [
+            "Minor warnings or non-blocking dialogs do NOT constitute failure",
+            "Slow startup is not a failure \u2014 allow adequate time",
+            "Record both pass and fail states clearly in the validation report"
+          ]
+        }
+      }
+    },
+    "/close/application": {
+      "post": {
+        "summary": "Close the current application before launching the next",
+        "operationId": "closeApplication",
+        "x-agent-instructions": {
+          "steps": [
+            "Press Alt+F4 to close the active application window",
+            "If a 'Save changes?' dialog appears, click 'Don't Save' or 'Discard'",
+            "If Alt+F4 does not work, click the X button in the top-right corner of the window",
+            "Wait for the application to close fully before launching the next one",
+            "Take a screenshot to confirm the desktop is clear before proceeding"
+          ],
+          "tips": [
+            "Always close the previous application before launching the next to avoid resource conflicts",
+            "If an application is frozen, use Task Manager (Ctrl+Shift+Esc) to force-close it",
+            "After closing OpenOffice apps, wait 2-3 seconds for background processes to terminate"
+          ],
+          "commonDialogs": {
+            "saveChanges": "Click 'Don't Save' or 'Discard Changes'",
+            "confirmClose": "Click 'Yes' or 'OK' to confirm closure"
+          }
+        }
+      }
+    },
+    "/report/generate": {
+      "post": {
+        "summary": "Generate a validation summary report",
+        "operationId": "generateReport",
+        "x-agent-instructions": {
+          "steps": [
+            "After testing all applications, compile the results into a structured report",
+            "For each application, record: Name, Status (PASS/FAIL/NOT FOUND), Notes",
+            "Include any error messages observed",
+            "Include the count of passed vs failed applications",
+            "Present the report in a clear table or list format"
+          ],
+          "reportFormat": {
+            "fields": [
+              "Application Name",
+              "Launch Method Used",
+              "Status: PASS / FAIL / NOT FOUND",
+              "Window Title Observed",
+              "Notes / Error Messages"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "x-agent-general-instructions": {
+    "applicationOverview": {
+      "name": "Desktop Application Validator",
+      "type": "Multi-application validation workflow",
+      "purpose": "Launch each of the following applications via the Windows Start Menu and confirm they open and are functional: Firefox, Notepad++, OpenOffice Calc (scalc), OpenOffice Draw (sdraw), OpenOffice Impress (simpress), OpenOffice Math (smath), OpenOffice Start Center (soffice), OpenOffice Web (sweb), OpenOffice Writer (swriter)"
+    },
+    "applicationOrder": [
+      "1. Firefox",
+      "2. Notepad++",
+      "3. OpenOffice Calc (scalc)",
+      "4. OpenOffice Draw (sdraw)",
+      "5. OpenOffice Impress (simpress)",
+      "6. OpenOffice Math (smath)",
+      "7. OpenOffice Start Center (soffice)",
+      "8. OpenOffice Web (sweb)",
+      "9. OpenOffice Writer (swriter)"
+    ],
+    "windowLayout": {
+      "desktop": "Standard Windows desktop with taskbar at the bottom",
+      "startMenu": "Accessed via Windows key or clicking the Start button (bottom-left)",
+      "searchBar": "Typing immediately after pressing Windows key triggers search",
+      "taskbar": "Running applications appear as icons in the taskbar \u2014 useful for switching between apps"
+    },
+    "coordinatePlanning": {
+      "description": "Applications are launched via Start Menu search \u2014 exact pixel coordinates are less critical than for canvas-based apps. Focus on clicking visible search results and UI elements.",
+      "startButtonLocation": "Bottom-left corner of the screen, approximately (30, 1060) on 1080p displays",
+      "searchResults": "Appear in the center of the Start Menu overlay \u2014 click the topmost relevant result",
+      "closeButton": "X button in the top-right corner of each window, approximately (rightEdge - 15, 15)"
+    },
+    "actionBatching": {
+      "coreRule": "For each application: search \u2192 launch \u2192 validate \u2192 close. Take a screenshot after launch and after validation. Close before moving to the next app.",
+      "screenshotTiming": [
+        "After each application launches (to verify it opened)",
+        "After performing a basic interaction (to confirm responsiveness)",
+        "After observing any error or unexpected state"
+      ],
+      "avoidUnnecessaryScreenshots": "Do not screenshot between typing in search and clicking results \u2014 these are reliable actions"
+    },
+    "interactionPatterns": {
+      "startMenuSearch": "Press Windows key \u2192 type app name \u2192 click result",
+      "dismissDialogs": "Press Escape or click Cancel/Skip/No buttons to dismiss non-essential dialogs",
+      "basicInteraction": "Click on the main editing area and type a small amount of text to verify responsiveness",
+      "closeApplication": "Alt+F4 \u2192 click 'Don't Save' if prompted"
+    },
+    "errorRecovery": {
+      "appNotInSearch": {
+        "description": "Application not found when searching by primary name",
+        "recovery": "Try alternative search terms. Document as 'NOT FOUND' if all attempts fail."
+      },
+      "startMenuNotOpening": {
+        "description": "Start Menu does not open when pressing Windows key",
+        "recovery": "Click the Start button directly in the bottom-left corner of the taskbar"
+      },
+      "appFrozenOnLaunch": {
+        "description": "Application window appears but is unresponsive",
+        "recovery": "Wait 15 seconds. If still frozen, open Task Manager (Ctrl+Shift+Esc), find the process, and click 'End Task'. Mark as FAIL."
+      },
+      "unexpectedDialog": {
+        "description": "A blocking dialog appears during validation",
+        "recovery": "Press Escape first. If dialog persists, read its content and click the most appropriate dismissal button (Cancel, No, Skip, Close)."
+      },
+      "openOfficeRecoveryDialog": {
+        "description": "OpenOffice asks to recover a previous session",
+        "recovery": "Click 'Discard' \u2014 this is normal and not a failure"
+      },
+      "previousAppStillVisible": {
+        "description": "Previous application did not close fully",
+        "recovery": "Click the X to close it, or use Alt+F4. Ensure the window is gone before launching the next app."
+      },
+      "saveDialog": {
+        "description": "Save dialog appears when closing an app where test input was typed",
+        "recovery": "Click 'Don't Save' or 'Discard Changes' to close without saving"
+      }
+    },
+    "validationStandards": {
+      "passDefinition": "Application window opens, main UI is visible, no fatal error dialogs, and the application responds to at least one user interaction.",
+      "failDefinition": "Application does not open, shows a crash/fatal error dialog, or is completely unresponsive for more than 15 seconds.",
+      "notFoundDefinition": "No matching application found in Start Menu after trying all reasonable search terms.",
+      "warningsAreOk": "Non-blocking warnings, update prompts, registration dialogs, and default setting prompts do NOT constitute failure."
+    },
+    "keyboardShortcuts": {
+      "Windows key": "Open Start Menu / search",
+      "Alt+F4": "Close active window",
+      "Ctrl+Z": "Undo (for cleanup after typing test text)",
+      "Escape": "Dismiss dialogs",
+      "Ctrl+Shift+Esc": "Open Task Manager (for force-closing frozen apps)",
+      "Alt+Tab": "Switch between open windows"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "workspaces-agent-demo"
+version = "0.1.0"
+description = "Bedrock-driven agent demo for remote Windows desktops"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}

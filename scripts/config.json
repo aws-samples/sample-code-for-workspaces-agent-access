@@ -1,0 +1,76 @@
+{
+  // The MCP endpoint and signing service name used by every script and
+  // agent in this package. The endpoint is templated — `{region}` is
+  // replaced at runtime with the caller's AWS region (or the `mcp.region`
+  // override below) so the request hits the nearest regional deployment.
+  // Callers sign SigV4 requests for that same region; leave `region` null
+  // to follow the caller's AWS_REGION, or set it to force a specific
+  // signing region during local testing.
+  "mcp": {
+    "endpoint": "https://agentaccess-mcp.{region}.api.aws/mcp",
+    "region": null,
+    "service": "agentaccess-mcp"
+  },
+
+  "vpc": {
+    "useExisting": false,
+    "existing": {
+      "vpcId": "vpc-1234567890abcdef0",
+      "region": "",
+      "subnetId": "subnet-1234567890abcdef0",
+      "securityGroupIds": [
+        "sg-1234567890abcdef0"
+      ]
+    },
+    "new": {
+      "region": "",
+      "name": "workspaces-agent-demo-vpc",
+      "cidr": "10.0.0.0/16",
+      "maxAzs": 2,
+      "natGateways": 1
+    }
+  },
+  "imageBuilder": {
+    "create": false,
+    "name": "workspaces-agent-demo-image-builder",
+    "displayName": "WorkSpaces Agent Demo Image Builder",
+    "description": "WorkSpaces Applications Image Builder for WorkSpaces Agent Demo",
+    "instanceType": "stream.standard.medium",
+    "imageName": "AppStream-WinServer2025-12-18-2025",
+    "enableDefaultInternetAccess": false,
+    "iamRoleArn": "",
+    "tags": {
+      "Project": "WorkSpacesAgentDemo",
+      "Environment": "prod"
+    }
+  },
+  "fleet": {
+    "name": "WorkspacesAgentDemo",
+    "displayName": "WorkSpaces Applications Fleet for Agent Demo",
+    "description": "WorkSpaces Applications streaming Fleet for Agent Demo",
+    "instanceType": "stream.standard.medium",
+    "fleetType": "ALWAYS_ON",
+    "imageName": "Amazon-AppStream2-Sample-Image-06-17-2024",
+    "iamRoleArn": "",
+    "enableDefaultInternetAccess": false,
+    "maxUserDurationInSeconds": 57600,
+    "disconnectTimeoutInSeconds": 900,
+    "idleDisconnectTimeoutInSeconds": 900,
+    "computeCapacity": {
+      "desiredInstances": 1
+    },
+    "tags": {
+      "Project": "WorkSpacesAgentDemo",
+      "Environment": "prod"
+    }
+  },
+  "stack": {
+    "name": "Workspaces-Apps-AgentDemo",
+    "displayName": "WorkSpaces Applications Stack for Agent Demo",
+    "description": "WorkSpaces Agent Demo",
+    "tags": {
+      "Project": "WorkSpacesAgentDemo",
+      "Environment": "prod"
+    }
+  }
+}
