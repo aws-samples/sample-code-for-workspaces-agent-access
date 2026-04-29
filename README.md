@@ -117,7 +117,6 @@ sample-code-for-workspaces-agent-access/
 │   ├── install.sh              # Install Python dependencies (macOS / Linux)
 │   ├── install.ps1             # Install Python dependencies (Windows)
 │   ├── package.sh              # Create distribution zip
-│   └── migrate_to_mcp.sh       # Migrate from local client to MCP server
 ├── skills/
 │   └── workspace-skill-creator/  # Skill for creating new app skills
 └── requirements.txt
