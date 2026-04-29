@@ -1,4 +1,6 @@
 #Requires -Version 5.1
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
 # Installation script for WorkSpaces Agent Framework (Windows PowerShell)
 # Creates a Python venv and installs Python packages.
 

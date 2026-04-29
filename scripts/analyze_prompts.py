@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT-0
 """
 Analyze agent logs and prompts to suggest improvements using Claude.
 This script uses AI to review execution logs, metrics, and current prompts

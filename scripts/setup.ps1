@@ -1,4 +1,6 @@
 #Requires -Version 5.1
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
 # ──────────────────────────────────────────────────────────────
 # WorkSpaces Agent Demo — One-Step Setup (Windows PowerShell)
 #

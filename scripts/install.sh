@@ -1,6 +1,6 @@
 #!/bin/bash
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT-0
 # Installation script for WorkSpaces Agent Framework
 # Creates a Python venv and installs Python packages.
 

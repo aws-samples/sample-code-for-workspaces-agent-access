@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT-0
 """
 Agent Creator - Interactive CLI that interviews the user about their
 target application, then generates a skill JSON and scaffolds an agent directory.

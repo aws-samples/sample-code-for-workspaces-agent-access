@@ -1,6 +1,6 @@
 #!/bin/bash
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT-0
 # Package script for WorkSpaces Agent Framework
 # Creates a clean zip file with only source code, excluding runtime artifacts
 
