@@ -1,6 +1,8 @@
-# Sample Code for Amazon WorkSpaces Applications with Agent Access
+# Sample Code for Amazon WorkSpaces Applications with agent access
 
-Build autonomous agents that automate desktop workflows on [Amazon WorkSpaces Applications](https://docs.aws.amazon.com/appstream2/latest/developerguide/) with Agent Access. Agents interact with any combination of applications — filling forms, transferring data between apps, navigating multi-step processes — using the Strands Agents SDK with Claude Computer Use.
+Build autonomous agents that automate desktop workflows on [Amazon WorkSpaces Applications with agent access](https://docs.aws.amazon.com/appstream2/latest/developerguide/agent-access.html). Agents interact with any combination of applications — filling forms, transferring data between apps, navigating multi-step processes — using the Strands Agents SDK with Claude Computer Use.
+
+Amazon WorkSpaces Applications enables agents to connect to streaming sessions and interact with desktop applications through [a managed Model Context Protocol (MCP) service](https://docs.aws.amazon.com/appstream2/latest/developerguide/agent-access-mcp-server.html).
 
 ## Prerequisites
 The Quick Start helps you get setup with:
@@ -64,7 +66,7 @@ python3 agents/multi_agent_validation/agent.py
 ```
 
 ## Create Your Own Agent
-
+There's a library provided in `lib/agent_common.py` that you can use to create your own agent. We've also provided an agent creator with prompts to describe your workflow:
 ```bash
 python3 agents/agent_creator/agent.py
 ```
@@ -200,7 +202,7 @@ Cleanup:
 
 > **Note:** The AgentCore execution role must have access to the MCP Server endpoint. The deploy script automatically attaches the required IAM policy.
 
-### Security: single-principal deployment only
+**Security: single-principal deployment only**
 
 The AgentCore handler accepts `streaming_url` directly from the invocation payload. Anyone with permission to invoke the runtime can drive any AppStream session the execution role can reach — there is no cross-invoker isolation in this demo.
 
