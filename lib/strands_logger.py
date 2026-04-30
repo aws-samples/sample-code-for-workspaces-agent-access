@@ -32,11 +32,6 @@ _SENSITIVE_INPUT_TOOLS = frozenset({"type_text", "key"})
 # (`open_url`, `download_file`, `upload_file`, etc.) is blocked at the
 # BeforeToolCallEvent stage until an approval flow exists. The normalized
 # "short name" strips the `<server>___` MCP prefix.
-#
-# This covers the Claude Computer Use desktop-automation tool set: pointer
-# movement, click variants (including triple_click for text selection),
-# scroll/drag, keyboard input, and screenshot. Network/file-transfer tools
-# are intentionally excluded.
 _ALLOWED_TOOL_SHORTNAMES = frozenset({
     # Pointer + click
     "screenshot",
@@ -52,6 +47,7 @@ _ALLOWED_TOOL_SHORTNAMES = frozenset({
     # Drag / scroll
     "scroll",
     "drag",
+    "left_click_drag",
     # Keyboard
     "type_text",
     "key",
@@ -293,6 +289,13 @@ class StrandsAgentLogger:
                 f"🖱️ Drag ({tool_input.get('start_x')},{tool_input.get('start_y')}) → "
                 f"({tool_input.get('end_x')},{tool_input.get('end_y')})"
             )
+        elif short_name == "left_click_drag":
+            # Anthropic schema uses `coordinate` (end point) + `start_coordinate`.
+            start = tool_input.get('start_coordinate') or []
+            end = tool_input.get('coordinate') or []
+            start_s = f"({start[0]},{start[1]})" if len(start) == 2 else "(?)"
+            end_s = f"({end[0]},{end[1]})" if len(end) == 2 else "(?)"
+            self.show_action(f"🖱️ Drag {start_s} → {end_s}")
         elif short_name == "move_pointer":
             self.show_action(f"🖱️ Move ({tool_input.get('x')},{tool_input.get('y')})")
         elif short_name == "wait":

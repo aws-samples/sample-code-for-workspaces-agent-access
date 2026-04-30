@@ -38,7 +38,7 @@ python3 agents/generic_cua/agent.py --streaming-url "<STREAMING_URL>" \
 | `--skill` | No | None | Path to a skill JSON file to append to the system prompt |
 | `--model-id` | No | `us.anthropic.claude-sonnet-4-6` | Bedrock model ID |
 | `--region` | No | `us-west-2` | AWS region for Bedrock |
-| `--computer-use-tool` | No | `false` | Enable computer-use-2025-11-24 tool configuration |
+| `--no-computer-use-tool` | No | off | Disable Claude's computer-use training optimizations |
 | `--mcp-timeout` | No | `180` | MCP client startup timeout in seconds |
 | `--mcp-retries` | No | `3` | Number of MCP client connection retries |
 

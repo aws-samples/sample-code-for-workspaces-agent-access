@@ -130,8 +130,6 @@ def create_base_parser(description):
                        help='AppStream streaming URL for the desktop session')
     parser.add_argument('--model-id', default='us.anthropic.claude-sonnet-4-6',
                        help='Bedrock model ID (default: us.anthropic.claude-sonnet-4-6)')
-    parser.add_argument('--computer-use-tool', action='store_true', default=False,
-                       help='Enable computer-use-2025-11-24 tool configuration')
     parser.add_argument('--mcp-timeout', type=int, default=180,
                        help='MCP client startup timeout in seconds (default: 180)')
     parser.add_argument('--mcp-retries', type=int, default=3,
@@ -141,6 +139,14 @@ def create_base_parser(description):
                        help='AWS region for Bedrock (default: auto-detect from environment)')
     parser.add_argument('--no-screenshot-pruning', action='store_true', default=False,
                        help='Disable screenshot pruning from conversation context')
+    # --computer-use-tool defaults ON. Pass --no-computer-use-tool to opt out
+    # and run MCP-only (no anthropic_beta, no computer_20251124 declaration).
+    parser.add_argument('--computer-use-tool', action='store_true', default=True,
+                       help=argparse.SUPPRESS)
+    parser.add_argument('--no-computer-use-tool', dest='computer_use_tool',
+                       action='store_false',
+                       help='Disable the Anthropic computer-use-2025-11-24 beta. '
+                            'Agent runs with MCP tools only.')
 
     # MCP endpoint — defaults from config.json, can be overridden
     parser.add_argument('--mcp-endpoint', metavar='URL', default=DEFAULT_MCP_ENDPOINT,
@@ -226,11 +232,10 @@ def create_model(args):
     model_kwargs = {
         "model_id": args.model_id,
     }
-    if args.computer_use_tool:
-        model_kwargs["additional_model_request_fields"] = {
-            "computer_use_tool_configuration": {
-                "type": "computer-use-2025-11-24"
-            }
+
+    if getattr(args, 'computer_use_tool', False):
+        model_kwargs["additional_request_fields"] = {
+            "anthropic_beta": ["computer-use-2025-11-24"],
         }
 
     # Use a separate profile for LLM if specified
@@ -339,8 +344,8 @@ def print_banner(title, description, model_id, args):
     sys.stdout.write(f"  API: Bedrock\n")
     sys.stdout.write(f"  Model: {model_id}\n")
     sys.stdout.write(f"  Region: {args.region}\n")
-    if args.computer_use_tool:
-        sys.stdout.write(f"  Computer Use: enabled\n")
+    if getattr(args, 'computer_use_tool', False):
+        sys.stdout.write("  Computer Use beta: enabled (computer-use-2025-11-24)\n")
     sys.stdout.write("  " + "─" * 36 + "\n\n")
     sys.stdout.flush()
 
