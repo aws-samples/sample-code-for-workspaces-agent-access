@@ -24,7 +24,7 @@ python3 agents/generic_cua/agent.py --streaming-url "<STREAMING_URL>" \
 
 # With a specific model and region
 python3 agents/generic_cua/agent.py --streaming-url "<STREAMING_URL>" \
-  --model-id us.anthropic.claude-sonnet-4-6 \
+  --model-id global.anthropic.claude-sonnet-4-6 \
   --region us-east-1
 ```
 
@@ -36,7 +36,7 @@ python3 agents/generic_cua/agent.py --streaming-url "<STREAMING_URL>" \
 | `--system-prompt` | No | `prompts/system_prompt.md` | Path to a custom system prompt markdown file |
 | `--task-prompt` | No | None | Path to a task prompt file; triggers single-shot mode |
 | `--skill` | No | None | Path to a skill JSON file to append to the system prompt |
-| `--model-id` | No | `us.anthropic.claude-sonnet-4-6` | Bedrock model ID |
+| `--model-id` | No | `global.anthropic.claude-sonnet-4-6` | Bedrock model ID |
 | `--region` | No | `us-west-2` | AWS region for Bedrock |
 | `--no-computer-use-tool` | No | off | Disable Claude's computer-use training optimizations |
 | `--mcp-timeout` | No | `180` | MCP client startup timeout in seconds |

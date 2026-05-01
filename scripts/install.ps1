@@ -27,7 +27,16 @@ $PythonCmd = $null
 foreach ($candidate in @('python3.12', 'python3.11', 'python3.10', 'python3', 'python')) {
     $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
     if ($cmd) {
-        $versionOutput = & $candidate --version 2>&1
+        # Skip Microsoft Store python stubs — they print "not found" to stderr.
+        if ($cmd.Source -and $cmd.Source -match '\\WindowsApps\\') {
+            continue
+        }
+        $versionOutput = ''
+        try {
+            $versionOutput = & $candidate --version 2>&1 | Out-String
+        } catch {
+            continue
+        }
         if ($versionOutput -match 'Python\s+(\d+)\.(\d+)') {
             $major = [int]$Matches[1]
             $minor = [int]$Matches[2]
@@ -62,7 +71,9 @@ if (-not (Test-Path $VenvPython)) {
 }
 
 & $VenvPython -m pip install --upgrade pip *> $null
-& $VenvPython -m pip install -r requirements.txt *> $null
+# Run pip with output visible so any failures (missing hashes, network, etc.)
+# surface to the user instead of being swallowed.
+& $VenvPython -m pip install -r requirements.txt
 if ($LASTEXITCODE -ne 0) { Write-Fail "Failed to install Python dependencies" }
 Write-Ok "Python dependencies installed"
 

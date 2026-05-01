@@ -83,7 +83,7 @@ python3 agents/agent_creator/agent.py --update agents/<your_workflow>
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--streaming-url URL` | *(required)* | AppStream streaming URL for the desktop session |
-| `--model-id ID` | `us.anthropic.claude-sonnet-4-6` | Bedrock model ID |
+| `--model-id ID` | `global.anthropic.claude-sonnet-4-6` | Bedrock model ID |
 | `--no-computer-use-tool` | off | Disable Claude's computer-use training optimizations |
 | `--mcp-timeout SECS` | `180` | MCP client startup timeout |
 | `--mcp-retries N` | `3` | Number of MCP connection retries |

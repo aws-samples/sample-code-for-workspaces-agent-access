@@ -490,8 +490,8 @@ def run_update(args):
 
 def main():
     parser = argparse.ArgumentParser(description='Workspace Agent Creator')
-    parser.add_argument('--model-id', default='us.anthropic.claude-sonnet-4-6',
-                       help='Bedrock model ID (default: us.anthropic.claude-sonnet-4-6)')
+    parser.add_argument('--model-id', default='global.anthropic.claude-sonnet-4-6',
+                       help='Bedrock model ID (default: global.anthropic.claude-sonnet-4-6)')
     parser.add_argument('--no-prompt', action='store_true',
                        help='Skip interview and read from stdin as JSON')
     parser.add_argument('--update', metavar='AGENT_DIR',

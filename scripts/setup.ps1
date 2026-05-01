@@ -53,7 +53,19 @@ function Get-PythonCommand {
     foreach ($candidate in @('python3.12', 'python3.11', 'python3.10', 'python3', 'python')) {
         $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
         if ($cmd) {
-            $versionOutput = & $candidate --version 2>&1
+            # The Microsoft Store "python.exe" / "python3.exe" aliases live in
+            # WindowsApps and print an error to stderr when invoked. Skip them.
+            if ($cmd.Source -and $cmd.Source -match '\\WindowsApps\\') {
+                continue
+            }
+            $versionOutput = ''
+            try {
+                # Suppress non-terminating native errors from this probe so the
+                # script's ErrorActionPreference=Stop doesn't bail out here.
+                $versionOutput = & $candidate --version 2>&1 | Out-String
+            } catch {
+                continue
+            }
             if ($versionOutput -match 'Python\s+(\d+)\.(\d+)') {
                 $major = [int]$Matches[1]
                 $minor = [int]$Matches[2]
@@ -66,33 +78,30 @@ function Get-PythonCommand {
     return $null
 }
 
-# Strip JSONC comments and read a top-level dotted key from config.json
+# Strip JSONC comments and read a nested key path from config.json.
+# Keys are passed as separate arguments (e.g. 'fleet', 'name') to avoid any
+# Python string-escaping issues in the embedded script.
 function Get-ConfigValue {
     param(
         [Parameter(Mandatory=$true)][string]$PythonCmd,
         [Parameter(Mandatory=$true)][string]$ConfigPath,
-        [Parameter(Mandatory=$true)][string]$Expr,
+        [Parameter(Mandatory=$true)][string[]]$Keys,
         [string]$Default = ''
     )
-    # Single-quoted here-string — no PowerShell interpolation. We substitute
-    # the three placeholders ourselves so the `$` in the JSONC regex anchor
-    # isn't touched.
-    $template = @'
+    $pyScript = @'
 import json, re, sys
 try:
-    raw = open(r'__CONFIG__', encoding='utf-8').read()
+    raw = open(sys.argv[1], encoding='utf-8').read()
     raw = re.sub(r'(?m)^\s*//.*$', '', raw)
     d = json.loads(raw)
-    v = eval(r'd__EXPR__')
-    if v is None:
-        print('')
-    else:
-        print(v)
+    for k in sys.argv[2:]:
+        d = d[k]
+    print('' if d is None else d)
 except Exception:
-    print('__DEFAULT__')
+    print(sys.argv[-1] if False else '')
 '@
-    $pyScript = $template.Replace('__CONFIG__', $ConfigPath).Replace('__EXPR__', $Expr).Replace('__DEFAULT__', $Default)
-    $value = & $PythonCmd -c $pyScript 2>$null
+    $argList = @('-c', $pyScript, $ConfigPath) + $Keys
+    $value = & $PythonCmd @argList 2>$null
     if ([string]::IsNullOrWhiteSpace($value)) { return $Default }
     return $value.Trim()
 }
@@ -121,8 +130,21 @@ if ($awsCmd) {
     Write-Fail "AWS CLI not installed. Install it with the commands above, then re-run: powershell -ExecutionPolicy Bypass -File scripts\setup.ps1"
 }
 
-$CallerAccount = & aws sts get-caller-identity --query Account --output text 2>$null
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($CallerAccount) -or $CallerAccount -eq 'None') {
+$CallerAccount = ''
+try {
+    # Temporarily suppress errors so aws's stderr on expired creds doesn't
+    # turn into a NativeCommandError under ErrorActionPreference=Stop.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $CallerAccount = (& aws sts get-caller-identity --query Account --output text 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { $CallerAccount = '' }
+} catch {
+    $CallerAccount = ''
+} finally {
+    $ErrorActionPreference = $prev
+}
+
+if ([string]::IsNullOrWhiteSpace($CallerAccount) -or $CallerAccount -eq 'None') {
     Write-Warn "AWS credentials are missing or expired."
     Write-Host ""
     Write-Host "  Sign in with one of the following, then re-run this setup script."
@@ -143,7 +165,16 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($CallerAccount) -or $Ca
     Write-Fail "Not signed in. Sign in with the commands above, then re-run: powershell -ExecutionPolicy Bypass -File scripts\setup.ps1"
 }
 
-$CallerArn = & aws sts get-caller-identity --query Arn --output text 2>$null
+$CallerArn = ''
+try {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $CallerArn = (& aws sts get-caller-identity --query Arn --output text 2>&1 | Out-String).Trim()
+} catch {
+    $CallerArn = ''
+} finally {
+    $ErrorActionPreference = $prev
+}
 
 # ── Step 2: Python ────────────────────────────────────────────
 Write-Separator "Step 2/7: Checking Python 3.11+"
@@ -166,7 +197,7 @@ Write-Ok "Python found: $PythonCmd"
 
 # Now that python is available, read the fleet name out of config.json
 $FleetName = Get-ConfigValue -PythonCmd $PythonCmd -ConfigPath $ConfigPath `
-    -Expr "['fleet']['name']" -Default 'WorkspacesAgentDemo'
+    -Keys 'fleet', 'name' -Default 'WorkspacesAgentDemo'
 Write-Ok "Signed in as: $CallerArn"
 Write-Ok "Account: $CallerAccount | Region: $Region | Fleet: $FleetName"
 
@@ -185,9 +216,26 @@ Write-Separator "Step 4/7: Deploying AWS resources (VPC, Fleet, Stack)"
 
 # deploy.sh is a bash script that uses aws + python3 only. Run it via
 # whichever bash is available: Git Bash, WSL, or the Windows 11 built-in.
-$BashCmd = Get-Command bash -ErrorAction SilentlyContinue
-if (-not $BashCmd) {
-    Write-Warn "bash not found on PATH."
+# Git for Windows does NOT add bash to PATH by default (only Git\cmd), so
+# we also probe common Git install locations directly.
+function Get-BashPath {
+    $cmd = Get-Command bash -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    $candidates = @(
+        "$env:ProgramFiles\Git\bin\bash.exe",
+        "${env:ProgramFiles(x86)}\Git\bin\bash.exe",
+        "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe"
+    )
+    foreach ($p in $candidates) {
+        if ($p -and (Test-Path $p)) { return $p }
+    }
+    return $null
+}
+
+$BashPath = Get-BashPath
+if (-not $BashPath) {
+    Write-Warn "bash not found on PATH or in standard Git for Windows install locations."
     Write-Host ""
     Write-Host "  scripts\deploy.sh is a bash script. Install one of the following, then re-run this setup."
     Write-Host ""
@@ -201,10 +249,10 @@ if (-not $BashCmd) {
     Write-Fail "bash not installed. Install it with the commands above, then re-run: powershell -ExecutionPolicy Bypass -File scripts\setup.ps1"
 }
 
-Write-Info "Running deploy.sh via bash — this may take several minutes..."
+Write-Info "Running deploy.sh via bash ($BashPath) — this may take several minutes..."
 # Pass region through so deploy.sh picks the same region we resolved.
 $env:AWS_REGION = $Region
-& bash (Join-Path $ScriptDir 'deploy.sh')
+& $BashPath (Join-Path $ScriptDir 'deploy.sh')
 if ($LASTEXITCODE -ne 0) { Write-Fail "deploy.sh failed (exit $LASTEXITCODE)" }
 Write-Ok "AWS resources deployed."
 
@@ -237,7 +285,7 @@ while ($true) {
 Write-Separator "Step 6/7: Generating streaming URL"
 
 $StackName = Get-ConfigValue -PythonCmd $PythonCmd -ConfigPath $ConfigPath `
-    -Expr "['stack']['name']" -Default 'Workspaces-Apps-AgentDemo'
+    -Keys 'stack', 'name' -Default 'Workspaces-Apps-AgentDemo'
 
 Write-Info "Creating streaming URL..."
 $StreamingUrl = & aws appstream create-streaming-url `

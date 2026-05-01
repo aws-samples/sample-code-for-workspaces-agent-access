@@ -349,7 +349,7 @@ def _build_agent(body):
     except ValueError as e:
         raise ValueError(f"invalid endpoint/region: {e}") from e
     task_prompt_override = body.get("task_prompt") or body.get("prompt")
-    model_id = body.get("model_id", "us.anthropic.claude-sonnet-4-6")
+    model_id = body.get("model_id", "global.anthropic.claude-sonnet-4-6")
 
     if not streaming_url:
         raise ValueError(
@@ -613,12 +613,14 @@ if [ -n "$EXEC_ROLE" ] && [ "$EXEC_ROLE" != "None" ]; then
 
   # Scope Bedrock / AppStream / logs actions to the specific resources this
   # runtime needs. Operators should export these before running the deploy:
-  #   ALLOWED_MODEL_ARNS  = "arn:aws:bedrock:...::foundation-model/us.anthropic.claude-sonnet-4-6,..."
+  #   ALLOWED_MODEL_ARNS  = "arn:aws:bedrock:...::foundation-model/global.anthropic.claude-sonnet-4-6,..."
   #   STACK_ARN           = "arn:aws:appstream:us-west-2:123:stack/WorkspacesAgentDemo"
   #   FLEET_ARN           = "arn:aws:appstream:us-west-2:123:fleet/WorkspacesAgentDemo"
   # Defaults below are permissive to keep the demo working out of the box;
-  # harden them before any production use.
-  ALLOWED_MODEL_ARNS="${ALLOWED_MODEL_ARNS:-arn:aws:bedrock:*::foundation-model/us.anthropic.claude-*}"
+  # harden them before any production use. We allow both the global.* and us.*
+  # inference-profile prefixes plus the underlying foundation-model ARNs so
+  # Bedrock can resolve the profile to a target model in any routed region.
+  ALLOWED_MODEL_ARNS="${ALLOWED_MODEL_ARNS:-arn:aws:bedrock:*::foundation-model/anthropic.claude-*,arn:aws:bedrock:*:*:inference-profile/global.anthropic.claude-*,arn:aws:bedrock:*:*:inference-profile/us.anthropic.claude-*}"
   STACK_ARN="${STACK_ARN:-arn:aws:appstream:*:*:stack/*}"
   FLEET_ARN="${FLEET_ARN:-arn:aws:appstream:*:*:fleet/*}"
   LOG_GROUP_ARN="${LOG_GROUP_ARN:-arn:aws:logs:*:*:log-group:/aws/bedrock-agentcore/runtimes/*:*}"

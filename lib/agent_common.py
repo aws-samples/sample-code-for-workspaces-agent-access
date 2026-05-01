@@ -128,8 +128,8 @@ def create_base_parser(description):
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('--streaming-url',
                        help='AppStream streaming URL for the desktop session')
-    parser.add_argument('--model-id', default='us.anthropic.claude-sonnet-4-6',
-                       help='Bedrock model ID (default: us.anthropic.claude-sonnet-4-6)')
+    parser.add_argument('--model-id', default='global.anthropic.claude-sonnet-4-6',
+                       help='Bedrock model ID (default: global.anthropic.claude-sonnet-4-6)')
     parser.add_argument('--mcp-timeout', type=int, default=180,
                        help='MCP client startup timeout in seconds (default: 180)')
     parser.add_argument('--mcp-retries', type=int, default=3,
@@ -184,10 +184,10 @@ def resolve_streaming_url(parser, args):
 # work out of the box, but reject anything unexpected so a caller-supplied
 # `model_id` can't steer the agent toward an unreviewed model or region.
 ALLOWED_MODELS = frozenset({
-    "us.anthropic.claude-sonnet-4-6",
-    "us.anthropic.claude-sonnet-4-5",
-    "us.anthropic.claude-opus-4-6",
-    "us.anthropic.claude-opus-4-7",
+    "global.anthropic.claude-sonnet-4-6",
+    "global.anthropic.claude-sonnet-4-5",
+    "global.anthropic.claude-opus-4-6",
+    "global.anthropic.claude-opus-4-7",
 })
 ALLOWED_REGIONS = frozenset({
     # Americas

@@ -13,6 +13,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$SCRIPT_DIR/config.json"
 
+# Under MSYS/Cygwin (Git Bash), bash paths like /d/Users/... are not
+# understood by native Windows Python. Convert to a Windows path so
+# tools we invoke can actually open the file.
+if command -v cygpath &>/dev/null; then
+  CONFIG="$(cygpath -w "$CONFIG")"
+fi
+
 if [ ! -f "$CONFIG" ]; then
   echo "ERROR: config.json not found at $CONFIG" >&2
   exit 1
@@ -23,16 +30,46 @@ if ! command -v aws &>/dev/null; then
   exit 1
 fi
 
-if ! command -v python3 &>/dev/null && ! command -v jq &>/dev/null; then
-  echo "ERROR: Need either python3 or jq to parse config.json." >&2
+if ! command -v python3 &>/dev/null && ! command -v python &>/dev/null && ! command -v jq &>/dev/null; then
+  echo "ERROR: Need python3, python, or jq to parse config.json." >&2
+  exit 1
+fi
+
+# Pick a usable Python: prefer python3, fall back to python (common on Windows
+# where the python.org installer only provides `python.exe`). We also skip
+# anything under WindowsApps since those are the Microsoft Store stubs that
+# print "Python was not found" to stderr instead of running.
+_find_python() {
+  for c in python3 python; do
+    local path
+    path=$(command -v "$c" 2>/dev/null || true)
+    [ -z "$path" ] && continue
+    case "$path" in
+      *WindowsApps*|*windowsapps*) continue ;;
+    esac
+    if "$c" -c 'import sys; sys.exit(0 if sys.version_info>=(3,8) else 1)' &>/dev/null; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+PYTHON_BIN=$(_find_python || true)
+if [ -z "$PYTHON_BIN" ]; then
+  echo "ERROR: No working Python 3.8+ found on PATH." >&2
+  echo "  If you are on Windows, install Python from https://www.python.org/" >&2
+  echo "  or disable the Microsoft Store 'python' alias under Settings >" >&2
+  echo "  Manage App Execution Aliases." >&2
   exit 1
 fi
 
 # ── Helper: read config values ────────────────────────────────
+# We pass CONFIG through sys.argv (not interpolated into the Python source) so
+# paths with backslashes or special chars don't break the Python string literal.
 cfg() {
-  python3 -c "
+  "$PYTHON_BIN" -c "
 import json,re,sys
-raw=open('$CONFIG').read()
+raw=open(sys.argv[1]).read()
 raw=re.sub(r'(?m)^\s*//.*$','',raw)
 raw=re.sub(r',\s*//[^\n]*','',raw)
 d=json.loads(raw)
@@ -43,7 +80,7 @@ elif isinstance(v, bool):
     print(str(v))
 else:
     print(v)
-" 2>/dev/null || echo ""
+" "$CONFIG" 2>/dev/null || echo ""
 }
 
 # ── Read config ───────────────────────────────────────────────
@@ -57,12 +94,12 @@ if [ "$USE_EXISTING" = "True" ]; then
   REGION="${ENV_REGION:-${CFG_REGION:-us-east-1}}"
   VPC_ID=$(cfg '["vpc"]["existing"]["vpcId"]')
   SUBNET_ID=$(cfg '["vpc"]["existing"]["subnetId"]')
-  SG_IDS=$(python3 -c "
-import json
-cfg=json.load(open('$CONFIG'))
+  SG_IDS=$("$PYTHON_BIN" -c "
+import json, sys
+cfg=json.load(open(sys.argv[1]))
 sgs=cfg['vpc']['existing'].get('securityGroupIds',[])
 print(sgs[0] if sgs else '')
-")
+" "$CONFIG")
 else
   CFG_REGION=$(cfg '["vpc"]["new"]["region"]')
   REGION="${ENV_REGION:-${CFG_REGION:-us-east-1}}"
@@ -345,10 +382,26 @@ if [ "$STACK_EXISTS" != "None" ] && [ -n "$STACK_EXISTS" ]; then
 else
   # AgentAccessConfig is not yet in the public AWS CLI, so we send a
   # SigV4-signed PhotonAdminProxyService.CreateStack request directly.
+  # This requires botocore. Prefer a project venv Python if available
+  # (install.sh/.ps1 put it there); otherwise fall back to $PYTHON_BIN.
+  SIGV4_PYTHON="$PYTHON_BIN"
+  _venv_python_unix="$SCRIPT_DIR/../venv/bin/python"
+  _venv_python_win="$SCRIPT_DIR/../venv/Scripts/python.exe"
+  if [ -x "$_venv_python_unix" ]; then
+    SIGV4_PYTHON="$_venv_python_unix"
+  elif [ -x "$_venv_python_win" ]; then
+    SIGV4_PYTHON="$_venv_python_win"
+  fi
+  if ! "$SIGV4_PYTHON" -c 'import botocore' &>/dev/null; then
+    echo "ERROR: botocore is not importable by $SIGV4_PYTHON." >&2
+    echo "  Run scripts/install.sh (or install.ps1) first to create the project venv." >&2
+    exit 1
+  fi
+
   # We fail hard on any error: creating a stack without AgentAccessConfig
   # would silently break the Agent Access MCP flow at runtime.
   echo "Creating agent stack with AgentAccessConfig..."
-  python3 -c "
+  "$SIGV4_PYTHON" -c "
 import json, sys, urllib.request, urllib.error
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest

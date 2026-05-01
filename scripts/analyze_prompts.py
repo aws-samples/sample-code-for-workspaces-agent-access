@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # experimentation without editing the script.
 ANALYSIS_MODEL_ID = os.environ.get(
     "ANALYSIS_MODEL_ID",
-    "us.anthropic.claude-sonnet-4-20250514-v1:0",
+    "global.anthropic.claude-sonnet-4-6",
 )
 
 
