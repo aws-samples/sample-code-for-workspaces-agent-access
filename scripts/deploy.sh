@@ -343,10 +343,13 @@ STACK_EXISTS=$(aws appstream describe-stacks --region "$REGION" \
 if [ "$STACK_EXISTS" != "None" ] && [ -n "$STACK_EXISTS" ]; then
   echo "Stack '$STACK_NAME' already exists."
 else
-  # Use SigV4-signed request for AgentAccessConfig (not yet in CLI)
+  # AgentAccessConfig is not yet in the public AWS CLI, so we send a
+  # SigV4-signed PhotonAdminProxyService.CreateStack request directly.
+  # We fail hard on any error: creating a stack without AgentAccessConfig
+  # would silently break the Agent Access MCP flow at runtime.
   echo "Creating agent stack with AgentAccessConfig..."
   python3 -c "
-import json, requests
+import json, sys, urllib.request, urllib.error
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.session import Session
@@ -372,26 +375,28 @@ headers = {
 creds = Session().get_credentials().get_frozen_credentials()
 req = AWSRequest(method='POST', url=endpoint, data=body, headers=headers)
 SigV4Auth(creds, 'appstream', '$REGION').add_auth(req)
-resp = requests.post(endpoint, headers=dict(req.headers), data=body, timeout=30)
-if resp.status_code < 400:
-    print('Created Stack: $STACK_NAME (with AgentAccessConfig)')
-else:
-    print(f'Stack creation returned {resp.status_code}: {resp.text[:200]}')
-    # Fallback to standard CLI without AgentAccessConfig
-    import subprocess
-    subprocess.run([
-        'aws', 'appstream', 'create-stack', '--region', '$REGION',
-        '--name', '$STACK_NAME', '--display-name', '$STACK_DISPLAY',
-        '--description', '$STACK_DESC'
-    ], capture_output=True)
-    print('Created Stack: $STACK_NAME (without AgentAccessConfig — may need manual update)')
-" 2>/dev/null || {
-    # Final fallback
-    aws appstream create-stack --region "$REGION" \
-      --name "$STACK_NAME" \
-      --display-name "$STACK_DISPLAY" \
-      --description "$STACK_DESC" > /dev/null
-    echo "Created Stack: $STACK_NAME (without AgentAccessConfig)"
+
+http_req = urllib.request.Request(endpoint, data=body.encode('utf-8'),
+                                  headers=dict(req.headers), method='POST')
+try:
+    with urllib.request.urlopen(http_req, timeout=30) as r:
+        status = r.status
+        text = r.read().decode('utf-8', errors='replace')
+except urllib.error.HTTPError as e:
+    status = e.code
+    text = e.read().decode('utf-8', errors='replace')
+except urllib.error.URLError as e:
+    sys.stderr.write(f'CreateStack network error: {e}\n')
+    sys.exit(1)
+
+if status >= 400:
+    sys.stderr.write(f'CreateStack failed with {status}: {text[:500]}\n')
+    sys.exit(1)
+print('Created Stack: $STACK_NAME (with AgentAccessConfig)')
+" || {
+    echo "ERROR: Could not create stack with AgentAccessConfig." >&2
+    echo "  The Agent Access MCP Server requires this config on the stack." >&2
+    exit 1
   }
 fi
 echo ""
