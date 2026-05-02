@@ -180,7 +180,7 @@ Prerequisites: Node.js 20+, `agentcore` CLI (`npm install -g @aws/agentcore`), `
 Invoke:
 
 ```bash
-cd .agentcore-build/workspaces-agent-demo
+cd .agentcore-build/WorkspacesAgentDemo
 agentcore invoke '{"streaming_url": "<URL>"}' --stream
 ```
 
@@ -191,7 +191,7 @@ View logs:
 agentcore logs
 
 # CloudWatch logs (runtime)
-aws logs tail "/aws/bedrock-agentcore/runtimes/workspaces-agent-demo" --region us-east-1 --follow
+aws logs tail "/aws/bedrock-agentcore/runtimes/WorkspacesAgentDemo" --region us-east-1 --follow
 ```
 
 Cleanup:

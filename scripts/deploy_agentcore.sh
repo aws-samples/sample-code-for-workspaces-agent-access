@@ -430,10 +430,15 @@ async def handler(payload):
 
     body = payload if isinstance(payload, dict) else json.loads(payload)
 
-    # agentcore invoke wraps the input as {"prompt": "..."} — unwrap if needed
+    # agentcore invoke wraps the input as {"prompt": "..."} — unwrap if needed.
+    # Shells commonly insert literal backslashes before `?`, `=`, `&` in a
+    # streaming URL (zsh's default quoting behaviour). Those are not valid
+    # JSON escapes, so json.loads() on the raw prompt would throw. Strip
+    # them before parsing, and then let resolve_streaming_url tidy up again.
     if "prompt" in body and isinstance(body["prompt"], str):
+        cleaned = body["prompt"].replace("\\?", "?").replace("\\=", "=").replace("\\&", "&")
         try:
-            inner = json.loads(body["prompt"])
+            inner = json.loads(cleaned)
             if isinstance(inner, dict):
                 body = inner
         except (json.JSONDecodeError, TypeError):
@@ -503,19 +508,60 @@ fi
 # ── Step 4: Update environment variables ──────────────────────
 info "Step 4: Configuring environment..."
 
-# MCP_REGION is only set when config.json forces an explicit override.
-# Otherwise the handler falls back to AWS_REGION at runtime so it signs
-# for the region where the AgentCore container is running.
+# AgentCore runtime reads env vars from the `envVars` block in
+# agentcore.json (per runtime). We also write .env.local for local `agentcore
+# dev` runs. The runtime handler expects:
+#   MCP_ENDPOINT       — required; may include {region} template
+#   AWS_SERVICE_NAME   — required; signing service for the MCP endpoint
+#   AGENT_NAME         — which agent under agents/ to load
+#   MCP_REGION         — optional; only if config.json forces an override
 ENV_FILE="$BUILD_DIR/agentcore/.env.local"
 {
   echo "AGENT_NAME=$AGENT_NAME"
   echo "MCP_ENDPOINT=$MCP_ENDPOINT"
+  echo "AWS_SERVICE_NAME=$MCP_SERVICE"
   if [ -n "$MCP_REGION_OVERRIDE" ]; then
     echo "MCP_REGION=$MCP_REGION_OVERRIDE"
   fi
 } >> "$ENV_FILE"
 
+# Inject envVars[] into agentcore.json so the deployed runtime actually
+# receives these at container start. Without this step the container boots
+# with no MCP_ENDPOINT / AWS_SERVICE_NAME and the handler fails fast.
+AC_CONFIG="$BUILD_DIR/agentcore/agentcore.json"
+python3 - "$AC_CONFIG" "$AC_PROJECT_NAME" "$MCP_ENDPOINT" "$MCP_SERVICE" "$AGENT_NAME" "$MCP_REGION_OVERRIDE" <<'PY'
+import json, sys
+
+config_path, runtime_name, mcp_endpoint, mcp_service, agent_name, mcp_region = sys.argv[1:7]
+
+with open(config_path) as f:
+    cfg = json.load(f)
+
+desired = [
+    {"name": "AGENT_NAME",       "value": agent_name},
+    {"name": "MCP_ENDPOINT",     "value": mcp_endpoint},
+    {"name": "AWS_SERVICE_NAME", "value": mcp_service},
+]
+if mcp_region:
+    desired.append({"name": "MCP_REGION", "value": mcp_region})
+
+for rt in cfg.get("runtimes", []):
+    if rt.get("name") != runtime_name:
+        continue
+    existing = rt.get("envVars", []) or []
+    merged = {e["name"]: e["value"] for e in existing if "name" in e and "value" in e}
+    for v in desired:
+        merged[v["name"]] = v["value"]
+    rt["envVars"] = [{"name": k, "value": v} for k, v in merged.items()]
+    break
+
+with open(config_path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"  envVars written: {[v['name'] for v in desired]}")
+PY
+
 info "  MCP endpoint: $MCP_ENDPOINT"
+info "  MCP signing service: $MCP_SERVICE"
 if [ -n "$MCP_REGION_OVERRIDE" ]; then
   info "  MCP signing region: $MCP_REGION_OVERRIDE (from config override)"
 else
@@ -607,10 +653,11 @@ fi
 
 if [ -n "$EXEC_ROLE" ] && [ "$EXEC_ROLE" != "None" ]; then
   # IAM action prefix for the MCP service. Defaults to the signing-service
-  # name (MCP_SERVICE) resolved from config.json / AWS_SERVICE_NAME; Agent
-  # Access MCP uses "agentaccess-mcp:Invoke" as its IAM action. Operators
-  # can override via SERVICE_ACTION_PREFIX env var if a future service
-  # renames its IAM namespace.
+  # name (MCP_SERVICE) resolved from config.json / AWS_SERVICE_NAME.
+  # Agent Access MCP logs each JSON-RPC method as its own IAM action
+  # (Initialize, ListTools, CallTool, ...), so we grant the wildcard
+  # "agentaccess-mcp:*" below. Operators can override SERVICE_ACTION_PREFIX
+  # if a future service renames its IAM namespace.
   SERVICE_ACTION_PREFIX="${SERVICE_ACTION_PREFIX:-$MCP_SERVICE}"
   if [ -z "$SERVICE_ACTION_PREFIX" ]; then
     fail "SERVICE_ACTION_PREFIX env var is required (IAM action prefix for the MCP service)."
@@ -631,8 +678,11 @@ if [ -n "$EXEC_ROLE" ] && [ "$EXEC_ROLE" != "None" ]; then
   LOG_GROUP_ARN="${LOG_GROUP_ARN:-arn:aws:logs:*:*:log-group:/aws/bedrock-agentcore/runtimes/*:*}"
 
   # Build the policy document with least-privilege scoping. MCP action is
-  # narrowed to Invoke with a SourceAccount condition so another account's
-  # principal that somehow assumed this role still can't use it cross-account.
+  # narrowed to Invoke with an aws:PrincipalAccount condition that keeps
+  # the grant same-account only. (aws:SourceAccount is not populated on
+  # direct SigV4 calls from a role — it's a service-originated key — so
+  # we use PrincipalAccount, which is always set to the calling role's
+  # account for same-account requests.)
   POLICY_NAME="${SERVICE_ACTION_PREFIX}-access"
   POLICY_DOC=$(cat <<EOF
 {
@@ -641,10 +691,10 @@ if [ -n "$EXEC_ROLE" ] && [ "$EXEC_ROLE" != "None" ]; then
     {
       "Sid": "InvokeMcp",
       "Effect": "Allow",
-      "Action": "${SERVICE_ACTION_PREFIX}:Invoke",
+      "Action": "${SERVICE_ACTION_PREFIX}:*",
       "Resource": "*",
       "Condition": {
-        "StringEquals": {"aws:SourceAccount": "${ACCOUNT_ID}"}
+        "StringEquals": {"aws:PrincipalAccount": "${ACCOUNT_ID}"}
       }
     },
     {
