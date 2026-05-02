@@ -77,7 +77,7 @@ def load_recommendations_file(recommendations_path):
         return None
 
 
-def compare_sessions_with_claude(before_metrics, after_metrics, recommendations, region='us-west-2'):
+def compare_sessions_with_claude(before_metrics, after_metrics, recommendations, region='us-east-1'):
     """Use Claude to compare before/after sessions and evaluate recommendations"""
 
     # Extract key metrics for comparison
@@ -230,7 +230,7 @@ def find_latest_session(logs_dir="logs", metrics_dir="metrics"):
     return session_id
 
 
-def analyze_with_claude(log_content, metrics, system_prompt, task_prompt, skill_doc, region='us-west-2'):
+def analyze_with_claude(log_content, metrics, system_prompt, task_prompt, skill_doc, region='us-east-1'):
     """Use Claude to analyze logs and suggest prompt improvements"""
 
     # Build analysis prompt for Claude
@@ -425,7 +425,7 @@ Examples:
     parser.add_argument('--prompts-dir', help='Prompts directory (overrides --agent)')
     parser.add_argument('--skills-dir', help='Skills directory (overrides --agent)')
     parser.add_argument('--output', help='Output filename (default: prompt_analysis_YYYYMMDD_HHMMSS.md or comparison_YYYYMMDD_HHMMSS.md, saved to reports/)')
-    parser.add_argument('--region', default='us-west-2', help='AWS region for Bedrock (default: us-west-2)')
+    parser.add_argument('--region', default='us-east-1', help='AWS region for Bedrock (default: us-east-1)')
 
     args = parser.parse_args()
 

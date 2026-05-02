@@ -18,7 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-2}}"
+REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 AGENT_NAME="pdf_extractor_demo"
 AC_PROJECT_NAME="WorkspacesAgentDemo"
 CLEANUP=false
@@ -241,7 +241,7 @@ if not AWS_SERVICE_NAME:
 # MCP is deployed per-region. Sign for the runtime's own region by default
 # (AWS_REGION is set by AgentCore Runtime). Set MCP_REGION env var only to
 # override.
-MCP_REGION = os.environ.get("MCP_REGION") or os.environ.get("AWS_REGION", "us-west-2")
+MCP_REGION = os.environ.get("MCP_REGION") or os.environ.get("AWS_REGION", "us-east-1")
 
 # ── SSRF allow-list ──────────────────────────────────────────────
 # Caller-supplied overrides (mcp_endpoint, mcp_region, region) are validated
@@ -343,7 +343,7 @@ def _build_agent(body):
         mcp_endpoint = _validated_endpoint(rendered_endpoint, rendered_endpoint)
         llm_region = _validated_region(
             body.get("region"),
-            os.environ.get("AWS_REGION", "us-west-2"),
+            os.environ.get("AWS_REGION", "us-east-1"),
             ALLOWED_BEDROCK_REGIONS,
         )
     except ValueError as e:
@@ -614,8 +614,8 @@ if [ -n "$EXEC_ROLE" ] && [ "$EXEC_ROLE" != "None" ]; then
   # Scope Bedrock / AppStream / logs actions to the specific resources this
   # runtime needs. Operators should export these before running the deploy:
   #   ALLOWED_MODEL_ARNS  = "arn:aws:bedrock:...::foundation-model/global.anthropic.claude-sonnet-4-6,..."
-  #   STACK_ARN           = "arn:aws:appstream:us-west-2:123:stack/WorkspacesAgentDemo"
-  #   FLEET_ARN           = "arn:aws:appstream:us-west-2:123:fleet/WorkspacesAgentDemo"
+  #   STACK_ARN           = "arn:aws:appstream:us-east-1:123:stack/WorkspacesAgentDemo"
+  #   FLEET_ARN           = "arn:aws:appstream:us-east-1:123:fleet/WorkspacesAgentDemo"
   # Defaults below are permissive to keep the demo working out of the box;
   # harden them before any production use. We allow both the global.* and us.*
   # inference-profile prefixes plus the underlying foundation-model ARNs so

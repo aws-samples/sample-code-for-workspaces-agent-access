@@ -37,7 +37,7 @@ python3 agents/generic_cua/agent.py --streaming-url "<STREAMING_URL>" \
 | `--task-prompt` | No | None | Path to a task prompt file; triggers single-shot mode |
 | `--skill` | No | None | Path to a skill JSON file to append to the system prompt |
 | `--model-id` | No | `global.anthropic.claude-sonnet-4-6` | Bedrock model ID |
-| `--region` | No | `us-west-2` | AWS region for Bedrock |
+| `--region` | No | `us-east-1` | AWS region for Bedrock |
 | `--no-computer-use-tool` | No | off | Disable Claude's computer-use training optimizations |
 | `--mcp-timeout` | No | `180` | MCP client startup timeout in seconds |
 | `--mcp-retries` | No | `3` | Number of MCP client connection retries |

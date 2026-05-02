@@ -111,16 +111,16 @@ def resolve_mcp_region(args):
     """Pick the MCP signing region.
 
     Priority: CLI flag > config override > current runtime region (AWS_REGION
-    / AWS_DEFAULT_REGION) > us-west-2 fallback.
+    / AWS_DEFAULT_REGION) > us-east-1 fallback.
 
-    MCP is deployed per-region — an agent running in us-west-2 should sign
-    for us-west-2 regardless of what region its Bedrock model lives in.
+    MCP is deployed per-region — an agent running in us-east-1 should sign
+    for us-east-1 regardless of what region its Bedrock model lives in.
     """
     if getattr(args, 'mcp_region', None):
         return args.mcp_region
     if DEFAULT_MCP_REGION_OVERRIDE:
         return DEFAULT_MCP_REGION_OVERRIDE
-    return os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION') or 'us-west-2'
+    return os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION') or 'us-east-1'
 
 
 def create_base_parser(description):
@@ -135,7 +135,7 @@ def create_base_parser(description):
     parser.add_argument('--mcp-retries', type=int, default=3,
                        help='Number of MCP client connection retries (default: 3)')
     parser.add_argument('--region',
-                       default=os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'us-west-2')),
+                       default=os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')),
                        help='AWS region for Bedrock (default: auto-detect from environment)')
     parser.add_argument('--no-screenshot-pruning', action='store_true', default=False,
                        help='Disable screenshot pruning from conversation context')
@@ -366,8 +366,10 @@ def _print_connection_error(args):
     print(f"    1. The endpoint URL is correct: {getattr(args, 'mcp_endpoint', 'not set')}")
     print("    2. Your AWS credentials have access to the Agent Access MCP Server")
     print("    3. The streaming URL is valid and not expired")
+    print(f"    4. Your AWS region ({args.region}) matches the fleet region — "
+          "MCP requests are rejected cross-region")
     if getattr(args, 'mcp_profile', None):
-        print(f"    4. The AWS profile '{args.mcp_profile}' is configured correctly")
+        print(f"    5. The AWS profile '{args.mcp_profile}' is configured correctly")
 
 
 def _print_bedrock_error(args):

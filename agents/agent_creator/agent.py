@@ -498,8 +498,8 @@ def main():
                        help='Update an existing agent based on a prompt analysis report (e.g., agents/paint_demo)')
     parser.add_argument('--analysis', metavar='REPORT_PATH',
                        help='Path to prompt analysis report (default: most recent in reports/)')
-    parser.add_argument('--region', default=os.environ.get('AWS_DEFAULT_REGION', os.environ.get('AWS_REGION', 'us-west-2')),
-                       help='AWS region for Bedrock (default: us-west-2)')
+    parser.add_argument('--region', default=os.environ.get('AWS_DEFAULT_REGION', os.environ.get('AWS_REGION', 'us-east-1')),
+                       help='AWS region for Bedrock (default: us-east-1)')
     args = parser.parse_args()
 
     # Route to update mode
