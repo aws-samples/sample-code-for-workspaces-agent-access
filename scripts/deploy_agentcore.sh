@@ -606,7 +606,12 @@ if [ -z "$EXEC_ROLE" ]; then
 fi
 
 if [ -n "$EXEC_ROLE" ] && [ "$EXEC_ROLE" != "None" ]; then
-  SERVICE_ACTION_PREFIX="${SERVICE_ACTION_PREFIX:-}"
+  # IAM action prefix for the MCP service. Defaults to the signing-service
+  # name (MCP_SERVICE) resolved from config.json / AWS_SERVICE_NAME; Agent
+  # Access MCP uses "agentaccess-mcp:Invoke" as its IAM action. Operators
+  # can override via SERVICE_ACTION_PREFIX env var if a future service
+  # renames its IAM namespace.
+  SERVICE_ACTION_PREFIX="${SERVICE_ACTION_PREFIX:-$MCP_SERVICE}"
   if [ -z "$SERVICE_ACTION_PREFIX" ]; then
     fail "SERVICE_ACTION_PREFIX env var is required (IAM action prefix for the MCP service)."
   fi
