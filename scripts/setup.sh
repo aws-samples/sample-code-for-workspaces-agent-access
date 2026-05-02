@@ -67,12 +67,19 @@ chmod +x "$SCRIPT_DIR"/*.sh 2>/dev/null || true
 # ── Step 1: AWS CLI + credentials ─────────────────────────────
 separator "Step 1/7: Checking AWS CLI and credentials"
 
+AWS_VERSION_LINE=""
 if command -v aws &>/dev/null; then
-  ok "AWS CLI found: $(aws --version 2>&1 | head -1)"
-else
-  warn "AWS CLI v2 is not installed."
+  AWS_VERSION_LINE=$(aws --version 2>&1 | head -1)
+fi
+
+if [ -z "$AWS_VERSION_LINE" ] || [[ "$AWS_VERSION_LINE" != aws-cli/2.* ]]; then
+  if [ -n "$AWS_VERSION_LINE" ]; then
+    warn "Found $AWS_VERSION_LINE — this script requires AWS CLI v2."
+  else
+    warn "AWS CLI v2 is not installed."
+  fi
   echo ""
-  echo "  Install it with the commands below, then re-run this setup script."
+  echo "  Install AWS CLI v2 with the commands below, then re-run this setup script."
   echo ""
   case "$(uname -s)" in
     Linux)
@@ -96,8 +103,10 @@ else
       ;;
   esac
   echo ""
-  fail "AWS CLI not installed. Install it with the commands above, then re-run: bash scripts/setup.sh"
+  fail "AWS CLI v2 not installed. Install it with the commands above, then re-run: bash scripts/setup.sh"
 fi
+
+ok "AWS CLI found: $AWS_VERSION_LINE"
 
 # Verify credentials are configured and usable. sts:GetCallerIdentity is the
 # cheapest call that proves the full SigV4 path works.

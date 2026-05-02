@@ -113,13 +113,21 @@ $Region = if ($env:AWS_REGION) { $env:AWS_REGION } elseif ($env:AWS_DEFAULT_REGI
 Write-Separator "Step 1/7: Checking AWS CLI and credentials"
 
 $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
+$awsVersion = $null
 if ($awsCmd) {
-    $awsVersion = (& aws --version 2>&1 | Select-Object -First 1)
-    Write-Ok "AWS CLI found: $awsVersion"
-} else {
-    Write-Warn "AWS CLI v2 is not installed."
+    $awsVersion = (& aws --version 2>&1 | Out-String).Trim()
+}
+
+# Require AWS CLI v2 — v1 has different output formatting and dropped some
+# APIs this script needs. The --version line is "aws-cli/2.x.x ..." for v2.
+if ((-not $awsVersion) -or ($awsVersion -notmatch '^aws-cli/2\.')) {
+    if ($awsVersion) {
+        Write-Warn "Found '$awsVersion' — this script requires AWS CLI v2."
+    } else {
+        Write-Warn "AWS CLI v2 is not installed."
+    }
     Write-Host ""
-    Write-Host "  Install it with one of the options below, then re-run this setup script."
+    Write-Host "  Install AWS CLI v2 with one of the options below, then re-run this setup script."
     Write-Host ""
     Write-Host "  # Windows — MSI installer (recommended)" -ForegroundColor Cyan
     Write-Host "  https://awscli.amazonaws.com/AWSCLIV2.msi"
@@ -127,8 +135,9 @@ if ($awsCmd) {
     Write-Host "  # Windows — winget" -ForegroundColor Cyan
     Write-Host "  winget install -e --id Amazon.AWSCLI"
     Write-Host ""
-    Write-Fail "AWS CLI not installed. Install it with the commands above, then re-run: powershell -ExecutionPolicy Bypass -File scripts\setup.ps1"
+    Write-Fail "AWS CLI v2 not installed. Install it with the commands above, then re-run: powershell -ExecutionPolicy Bypass -File scripts\setup.ps1"
 }
+Write-Ok "AWS CLI found: $awsVersion"
 
 $CallerAccount = ''
 try {

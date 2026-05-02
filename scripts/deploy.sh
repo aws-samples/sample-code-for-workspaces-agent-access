@@ -26,7 +26,16 @@ if [ ! -f "$CONFIG" ]; then
 fi
 
 if ! command -v aws &>/dev/null; then
-  echo "ERROR: AWS CLI is not installed." >&2
+  echo "ERROR: AWS CLI v2 is not installed." >&2
+  exit 1
+fi
+
+# Require AWS CLI v2. v1 is unsupported (dropped support for several APIs
+# this script depends on, plus differs on some output formatting).
+AWS_VERSION_LINE=$(aws --version 2>&1 | head -1)
+if [[ "$AWS_VERSION_LINE" != aws-cli/2.* ]]; then
+  echo "ERROR: Found '$AWS_VERSION_LINE' — AWS CLI v2 is required." >&2
+  echo "       See https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html" >&2
   exit 1
 fi
 
