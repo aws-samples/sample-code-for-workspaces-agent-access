@@ -347,14 +347,15 @@ def main():
     print(f"  Checking fleet capacity...")
     original_capacity = scale_fleet(fleet_name, region, num_workers)
 
-    # Create per-worker streaming URLs
     print(f"  Creating {num_workers} streaming sessions...")
+    session_tag = uuid.uuid4().hex[:6]
     worker_urls = []
     for i in range(num_workers):
-        url = create_streaming_url(stack_name, fleet_name, region)
+        user_id = f"validator-{session_tag}-{i+1}"
+        url = create_streaming_url(stack_name, fleet_name, region, user_id=user_id)
         worker_urls.append(url)
         apps_in_batch = ", ".join(a["name"] for a in batches[i])
-        print(f"    Worker {i+1}: {apps_in_batch}")
+        print(f"    Worker {i+1} ({user_id}): {apps_in_batch}")
         print(f"    URL: {url}")
     print()
     print(f"  Waiting 30s for desktop sessions to initialize...")
