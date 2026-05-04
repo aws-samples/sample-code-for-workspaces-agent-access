@@ -297,10 +297,7 @@ def main():
                        help='Number of parallel workers, each gets its own desktop session (default: 3)')
     parser.add_argument('--apps', nargs='*', default=None,
                        help='Specific apps to validate (default: all)')
-    parser.add_argument('--stack-name', metavar='NAME',
-                       help='AppStream stack name (for creating per-worker streaming URLs)')
-    parser.add_argument('--fleet-name', dest='fleet_name_override', metavar='NAME',
-                       help='AppStream fleet name (for creating per-worker streaming URLs)')
+    # --stack-name and --fleet-name come from the base parser.
     args = parser.parse_args()
 
     agent_dir = os.path.dirname(os.path.abspath(__file__))
@@ -308,11 +305,8 @@ def main():
 
     # We need stack + fleet to create per-worker sessions. Fall back to
     # values from scripts/config.json so the common case doesn't require flags.
-    stack_name = getattr(args, 'stack_name', None) or agent_common._config.get("stack", {}).get("name")
-    fleet_name = (
-        getattr(args, 'fleet_name_override', None)
-        or agent_common._config.get("fleet", {}).get("name")
-    )
+    stack_name = args.stack_name or agent_common._config.get("stack", {}).get("name")
+    fleet_name = args.fleet_name or agent_common._config.get("fleet", {}).get("name")
 
     if not stack_name or not fleet_name:
         parser.error(
