@@ -1,0 +1,17 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+
+# Agent outputs - ignore contents but keep folders
+agents/*/logs/*
+!agents/*/logs/.gitkeep
+agents/*/metrics/*
+!agents/*/metrics/.gitkeep
+agents/*/screenshots/*
+!agents/*/screenshots/.gitkeep
+reports/*
+!reports/.gitkeep
