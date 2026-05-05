@@ -180,15 +180,9 @@ def resolve_streaming_url(parser, args):
     )
 
 
-# Accepted models and regions. Keep the demo open enough that experiments
-# work out of the box, but reject anything unexpected so a caller-supplied
-# `model_id` can't steer the agent toward an unreviewed model or region.
-ALLOWED_MODELS = frozenset({
-    "global.anthropic.claude-sonnet-4-6",
-    "global.anthropic.claude-sonnet-4-5",
-    "global.anthropic.claude-opus-4-6",
-    "global.anthropic.claude-opus-4-7",
-})
+# Accepted regions. Keep the demo open enough that experiments work out of
+# the box, but reject unexpected regions so a caller-supplied `region`
+# can't route traffic to an unreviewed deployment.
 ALLOWED_REGIONS = frozenset({
     # Americas
     "us-east-1",       # US East (N. Virginia)
@@ -212,17 +206,12 @@ ALLOWED_REGIONS = frozenset({
 def create_model(args):
     """Create a BedrockModel from parsed args.
 
-    Validates `model_id` and `region` against the allow-list. Unknown values
-    are rejected so a caller-supplied `model_id` cannot route traffic to an
-    unreviewed foundation model.
+    Validates `region` against the allow-list. `model_id` is passed
+    through unchanged — callers can target any Bedrock model their
+    credentials have access to.
     """
     import boto3
 
-    if args.model_id not in ALLOWED_MODELS:
-        raise ValueError(
-            f"model_id {args.model_id!r} not in allow-list. "
-            f"Permitted: {sorted(ALLOWED_MODELS)}"
-        )
     if args.region not in ALLOWED_REGIONS:
         raise ValueError(
             f"region {args.region!r} not in allow-list. "
@@ -302,6 +291,23 @@ def create_mcp_client_factory(args, root_dir=None):
             },
         )
     return factory
+
+
+def build_mcp_client(mcp_factory, startup_timeout, label=None):
+    """Construct an MCPClient and log the Strands client-side session UUID.
+
+    Logging the session id makes it easy to correlate a client session with
+    CloudWatch / CloudTrail events when multiple MCP sessions are active
+    concurrently. `label` is an optional prefix (e.g. worker tag) printed
+    alongside the session id.
+    """
+    client = MCPClient(mcp_factory, startup_timeout=startup_timeout)
+    session_id = getattr(client, "_session_id", None)
+    if session_id:
+        prefix = f"[{label}] " if label else ""
+        sys.stdout.write(f"  {prefix}MCP client session: {session_id}\n")
+        sys.stdout.flush()
+    return client
 
 
 def create_logger(agent_dir, task_prompt, model_id):
@@ -407,7 +413,7 @@ def run_agent_with_retry(args, mcp_factory, model, system_prompt, task_prompt, a
         sys.stdout.write(f"  Connecting to desktop (attempt {attempt}/{max_retries})...\n")
         sys.stdout.flush()
 
-        mcp_client = MCPClient(mcp_factory, startup_timeout=args.mcp_timeout)
+        mcp_client = build_mcp_client(mcp_factory, args.mcp_timeout)
         try:
             agent = Agent(
                 model=model,
@@ -462,7 +468,7 @@ def create_agent_with_retry(args, mcp_factory, model, system_prompt, agent_logge
         sys.stdout.write(f"  Connecting to desktop (attempt {attempt}/{max_retries})...\n")
         sys.stdout.flush()
 
-        mcp_client = MCPClient(mcp_factory, startup_timeout=args.mcp_timeout)
+        mcp_client = build_mcp_client(mcp_factory, args.mcp_timeout)
         try:
             agent = Agent(
                 model=model,

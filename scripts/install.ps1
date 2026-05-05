@@ -85,5 +85,5 @@ Write-Host "=========================================="
 Write-Host ""
 Write-Host "To run an agent:"
 Write-Host "  .\venv\Scripts\Activate.ps1" -ForegroundColor Yellow
-Write-Host "  python agents\paint_demo\agent.py --streaming-url `"<URL>`"" -ForegroundColor Yellow
+Write-Host "  python agents\pdf_extractor_demo\agent.py --streaming-url `"<URL>`"" -ForegroundColor Yellow
 Write-Host ""
