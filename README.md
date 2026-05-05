@@ -14,7 +14,7 @@ The Quick Start helps you get setup with:
 
 ## Quick Start
 
-Clone the repo and run the setup script from the repository root.
+Clone the repo and run the setup script from the repository root. Agents log their output and store screenshots in the relative agent folders (`agents/pdf_extractor_demo/screenshots` and `agents/pdf_extractor_demo/logs`).
 
 ### macOS / Linux
 
