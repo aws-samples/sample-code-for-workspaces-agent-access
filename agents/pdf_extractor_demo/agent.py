@@ -18,11 +18,11 @@ def main():
         banner_title="PDF Extractor Demo Agent",
         banner_body=(
             "The agent extracts data from PDF documents\n"
-            "on a remote Windows desktop using Firefox,\n"
-            "OpenOffice Writer, and File Explorer."
+            "on a remote Windows desktop using Firefox\n"
+            "and Notepad."
         ),
         skill_filename="pdf_extractor-skill.json",
-        skill_label="FIREFOX, OPENOFFICE WRITER, FILE EXPLORER SKILL",
+        skill_label="PDF EXTRACTOR SKILL",
     )
 
 

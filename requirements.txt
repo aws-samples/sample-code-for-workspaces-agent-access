@@ -12,6 +12,7 @@ anyio==4.13.0
     # via
     #   httpx
     #   mcp
+    #   openai
     #   py-key-value-aio
     #   sse-starlette
     #   starlette
@@ -23,6 +24,8 @@ attrs==26.1.0
     #   referencing
 authlib==1.7.0
     # via fastmcp
+aws-bedrock-token-generator==1.1.0
+    # via -r requirements.in
 awscrt==0.31.2
     # via botocore
 beartype==0.22.9
@@ -34,6 +37,7 @@ boto3==1.42.93
     #   strands-agents
 botocore[crt]==1.42.94
     # via
+    #   aws-bedrock-token-generator
     #   boto3
     #   mcp-proxy-for-aws
     #   s3transfer
@@ -58,6 +62,8 @@ cryptography==46.0.7
     #   secretstorage
 cyclopts==4.11.0
     # via fastmcp
+distro==1.9.0
+    # via openai
 dnspython==2.8.0
     # via email-validator
 docstring-parser==0.18.0
@@ -84,6 +90,7 @@ httpx==0.28.1
     # via
     #   fastmcp
     #   mcp
+    #   openai
 httpx-sse==0.4.3
     # via mcp
 idna==3.13
@@ -103,6 +110,8 @@ jeepney==0.9.0
     # via
     #   keyring
     #   secretstorage
+jiter==0.14.0
+    # via openai
 jmespath==1.1.0
     # via
     #   boto3
@@ -136,6 +145,8 @@ more-itertools==11.0.2
     # via
     #   jaraco-classes
     #   jaraco-functools
+openai==2.35.1
+    # via strands-agents
 openapi-pydantic==0.5.1
     # via fastmcp
 opentelemetry-api==1.41.0
@@ -172,6 +183,7 @@ pydantic[email]==2.13.3
     # via
     #   fastmcp
     #   mcp
+    #   openai
     #   openapi-pydantic
     #   pydantic-settings
     #   strands-agents
@@ -220,19 +232,24 @@ secretstorage==3.5.0
     # via keyring
 six==1.17.0
     # via python-dateutil
+sniffio==1.3.1
+    # via openai
 sse-starlette==3.3.4
     # via mcp
 starlette==1.0.0
     # via
     #   mcp
     #   sse-starlette
-strands-agents==1.36.0
+strands-agents[openai]==1.36.0
     # via -r requirements.in
+tqdm==4.67.3
+    # via openai
 typing-extensions==4.15.0
     # via
     #   anyio
     #   exceptiongroup
     #   mcp
+    #   openai
     #   opentelemetry-api
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions

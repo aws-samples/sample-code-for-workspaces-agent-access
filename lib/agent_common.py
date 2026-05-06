@@ -157,6 +157,9 @@ def create_base_parser(description):
                        help='AWS region for MCP SigV4 signing (defaults to runtime region)')
     parser.add_argument('--llm-profile', metavar='PROFILE',
                        help='AWS profile for Bedrock LLM calls (if different from default)')
+    parser.add_argument('--bedrock-api-key', metavar='KEY',
+                       help='Bedrock API key for bedrock-mantle (non-Anthropic models). '
+                            'Can also be set via AWS_BEARER_TOKEN_BEDROCK env var.')
 
     return parser
 
@@ -203,12 +206,27 @@ ALLOWED_REGIONS = frozenset({
 })
 
 
-def create_model(args):
-    """Create a BedrockModel from parsed args.
+def _supports_converse_images(model_id):
+    """Return True if model_id works on bedrock-runtime Converse API with images.
 
-    Validates `region` against the allow-list. `model_id` is passed
-    through unchanged — callers can target any Bedrock model their
-    credentials have access to.
+    Anthropic Claude and Amazon Nova models support image blocks through
+    the Converse API. Everything else needs bedrock-mantle.
+    """
+    lower = model_id.lower()
+    return any(x in lower for x in ("anthropic", "claude", "amazon.nova", "nova-pro", "nova-lite", "nova-premier"))
+
+
+def create_model(args):
+    """Create a model provider from parsed args.
+
+    For Anthropic/Claude models: uses BedrockModel (bedrock-runtime, Converse API).
+    For all other models: uses OpenAIModel (bedrock-mantle, Chat Completions API).
+
+    bedrock-mantle requires a Bedrock API key — set AWS_BEARER_TOKEN_BEDROCK
+    in the environment or pass --bedrock-api-key on the CLI.
+
+    Validates `region` against the allow-list. `model_id` is passed through
+    unchanged — callers can target any Bedrock model their credentials allow.
     """
     import boto3
 
@@ -218,23 +236,92 @@ def create_model(args):
             f"Permitted: {sorted(ALLOWED_REGIONS)}"
         )
 
-    model_kwargs = {
-        "model_id": args.model_id,
-    }
+    model_id = args.model_id
 
-    if getattr(args, 'computer_use_tool', False):
-        model_kwargs["additional_request_fields"] = {
-            "anthropic_beta": ["computer-use-2025-11-24"],
-        }
+    if _supports_converse_images(model_id):
+        # ── Anthropic path: bedrock-runtime + Converse API ────────────
+        model_kwargs = {"model_id": model_id}
 
-    # Use a separate profile for LLM if specified
-    if getattr(args, 'llm_profile', None):
-        model_kwargs["boto_session"] = boto3.Session(
-            profile_name=args.llm_profile, region_name=args.region)
+        if getattr(args, 'computer_use_tool', False) and ("anthropic" in model_id.lower() or "claude" in model_id.lower()):
+            model_kwargs["additional_request_fields"] = {
+                "anthropic_beta": ["computer-use-2025-11-24"],
+            }
+
+        if getattr(args, 'llm_profile', None):
+            model_kwargs["boto_session"] = boto3.Session(
+                profile_name=args.llm_profile, region_name=args.region)
+        else:
+            model_kwargs["region_name"] = args.region
+
+        return BedrockModel(**model_kwargs)
+
     else:
-        model_kwargs["region_name"] = args.region
+        # ── Non-Anthropic path: bedrock-mantle + OpenAI-compat API ────
+        from strands.models.openai import OpenAIModel
+        from strands.types.exceptions import ContextWindowOverflowException
+        import logging as _logging
 
-    return BedrockModel(**model_kwargs)
+        # Suppress the noisy "Moving image from tool message" warning that
+        # fires for every historical screenshot on every turn.
+        _logging.getLogger("strands.models.openai").setLevel(_logging.ERROR)
+
+        class _MantleModel(OpenAIModel):
+            """OpenAIModel subclass that maps bedrock-mantle payload errors to
+            ContextWindowOverflowException so Strands calls reduce_context()."""
+
+            async def stream(self, messages, tool_specs=None, system_prompt=None, **kwargs):
+                try:
+                    async for event in super().stream(messages, tool_specs, system_prompt, **kwargs):
+                        yield event
+                except Exception as e:
+                    if "length limit exceeded" in str(e).lower():
+                        raise ContextWindowOverflowException(str(e)) from e
+                    raise
+
+        # Resolve the Bedrock API key. Priority:
+        #   1. --bedrock-api-key CLI flag
+        #   2. AWS_BEARER_TOKEN_BEDROCK env var
+        #   3. Auto-generate a short-term key from current AWS credentials
+        api_key = (
+            getattr(args, 'bedrock_api_key', None)
+            or os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
+        )
+
+        if not api_key:
+            try:
+                from aws_bedrock_token_generator import BedrockTokenGenerator
+                import boto3 as _boto3
+
+                session = _boto3.Session(
+                    profile_name=getattr(args, 'llm_profile', None),
+                    region_name=args.region,
+                )
+                credentials = session.get_credentials().get_frozen_credentials()
+                generator = BedrockTokenGenerator()
+                api_key = generator.get_token(credentials=credentials, region=args.region)
+                sys.stdout.write("  Auto-generated short-term Bedrock API key\n")
+                sys.stdout.flush()
+            except ImportError:
+                raise RuntimeError(
+                    f"Model {model_id!r} requires bedrock-mantle (OpenAI-compatible endpoint).\n"
+                    "  Install aws-bedrock-token-generator to auto-generate a key:\n"
+                    "    pip install aws-bedrock-token-generator\n"
+                    "  Or set AWS_BEARER_TOKEN_BEDROCK / --bedrock-api-key manually."
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to auto-generate Bedrock API key: {e}\n"
+                    "  Set AWS_BEARER_TOKEN_BEDROCK in the environment or pass --bedrock-api-key."
+                ) from e
+
+        mantle_url = f"https://bedrock-mantle.{args.region}.api.aws/v1"
+        sys.stdout.write(f"  Model provider: bedrock-mantle ({mantle_url})\n")
+        sys.stdout.flush()
+
+        return _MantleModel(
+            client_args={"base_url": mantle_url, "api_key": api_key},
+            model_id=model_id,
+        )
 
 
 def _is_remote_mcp(args):
@@ -363,6 +450,7 @@ def _is_retryable_error(error_str):
         "timed out", "initialization", "channel not connected",
         "connection to the mcp server was closed", "mcperror",
         "401 unauthorized", "iserror", "tools\nfield required",
+        "length limit exceeded",  # bedrock-mantle payload overflow
     ])
 
 
@@ -555,7 +643,12 @@ def setup_standard_agent(args, agent_dir, skill_filename=None, skill_label=None,
 
     model = create_model(args)
     mcp_factory = create_mcp_client_factory(args)
-    conv_manager = None if args.no_screenshot_pruning else ScreenshotPruningConversationManager()
+    # Non-Anthropic models go through bedrock-mantle which has a strict payload
+    # size limit. Use a tight sliding window to prevent overflow.
+    if not _supports_converse_images(args.model_id):
+        conv_manager = None if args.no_screenshot_pruning else ScreenshotPruningConversationManager(max_messages=6)
+    else:
+        conv_manager = None if args.no_screenshot_pruning else ScreenshotPruningConversationManager()
 
     return {
         "system_prompt": system_prompt,

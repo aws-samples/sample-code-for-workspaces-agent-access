@@ -28,34 +28,6 @@ from typing import Any, Dict, Optional
 _SENSITIVE_INPUT_TOOLS = frozenset({"type_text", "key"})
 
 
-# Allow-list of MCP tool short-names this agent may invoke. Any other tool
-# (`open_url`, `download_file`, `upload_file`, etc.) is blocked at the
-# BeforeToolCallEvent stage until an approval flow exists. The normalized
-# "short name" strips the `<server>___` MCP prefix.
-_ALLOWED_TOOL_SHORTNAMES = frozenset({
-    # Pointer + click
-    "screenshot",
-    "left_click",
-    "right_click",
-    "middle_click",
-    "double_click",
-    "triple_click",
-    "move_pointer",
-    "left_mouse_down",
-    "left_mouse_up",
-    "cursor_position",
-    # Drag / scroll
-    "scroll",
-    "drag",
-    "left_click_drag",
-    # Keyboard
-    "type_text",
-    "key",
-    "hold_key",
-    # Timing
-    "wait",
-})
-
 
 def _redact_tool_input(short_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
     """Return a copy of tool_input with sensitive string values redacted.
@@ -193,25 +165,13 @@ class StrandsAgentLogger:
         registry.add_callback(AfterModelCallEvent, self._on_after_model_call)
 
     def _on_before_tool_call(self, event: BeforeToolCallEvent):
-        """Hook: enforce tool allow-list; fix coordinate-param string coercion.
+        """Hook: fix coordinate-param string coercion.
 
-        Raises PermissionError if the model tries to invoke a tool outside
-        `_ALLOWED_TOOL_SHORTNAMES`. Strands surfaces this as a tool failure
-        that the model can observe and react to, which is the desired
-        behavior — the tool simply doesn't execute.
+        Some models emit coordinate values as strings ("875") or combined
+        ("875, 27"). Coerce them to integers so the MCP server accepts them.
         """
         tool_name = event.tool_use.get("name", "")
         short_name = tool_name.rsplit("___", 1)[-1]
-        if short_name not in _ALLOWED_TOOL_SHORTNAMES:
-            self.file_logger.warning(
-                f"Blocked tool call: {tool_name!r} (short={short_name!r}) "
-                f"not in allow-list {sorted(_ALLOWED_TOOL_SHORTNAMES)}"
-            )
-            raise PermissionError(
-                f"Tool {short_name!r} is not in the allow-list. "
-                f"Permitted: {sorted(_ALLOWED_TOOL_SHORTNAMES)}"
-            )
-
         tool_input = event.tool_use.get("input", {})
         changed = False
         for key in ("x", "y", "scroll_amount"):

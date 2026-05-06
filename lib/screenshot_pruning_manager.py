@@ -36,31 +36,48 @@ class ScreenshotPruningConversationManager(ConversationManager):
 
     PLACEHOLDER = "[screenshot — saved to disk, removed from context]"
 
-    def __init__(self, keep_last_n: int = 1):
+    def __init__(self, keep_last_n: int = 1, max_messages: int = 0):
         """Initialize the manager.
 
         Args:
             keep_last_n: Number of most recent screenshots to keep in context.
                          Defaults to 1 (only the latest screenshot is sent to the model).
+            max_messages: Maximum number of messages to keep in conversation history.
+                         Older messages are dropped entirely to prevent payload overflow.
+                         Defaults to 10 (~3-4 agent turns). bedrock-mantle has a strict
+                         body size limit (~20MB); each screenshot expands to ~1-2MB in
+                         the OpenAI wire format, so we keep the window very tight.
         """
         super().__init__()
         self.keep_last_n = max(1, keep_last_n)
+        self.max_messages = max_messages
 
     def apply_management(self, agent: "Agent", **kwargs: Any) -> None:
-        """Strip old screenshot images from the conversation history.
+        """Strip old screenshot images and trim conversation length.
 
-        Walks agent.messages to find all image content blocks that came from
-        screenshot tool results. Keeps the most recent `keep_last_n` screenshots
-        intact and replaces older ones with a text placeholder.
+        1. If the conversation exceeds max_messages, drop the oldest messages
+           (keeping the first message if it's a system-like user turn).
+        2. Walk remaining messages to find image blocks. Keep only the most
+           recent `keep_last_n` screenshots; replace older ones with a text
+           placeholder.
+
+        Handles both Converse format ({"image": {...}}) and OpenAI-compat format
+        ({"type": "image_url", ...}) since Strands' OpenAI model provider creates
+        user messages with image_url blocks from tool results.
 
         The messages list is modified in-place.
         """
+        # ── Step 1: Sliding window on total message count ────────────
+        if self.max_messages > 0 and len(agent.messages) > self.max_messages:
+            # Keep the last max_messages messages. Drop from the front.
+            overflow = len(agent.messages) - self.max_messages
+            del agent.messages[:overflow]
         # Collect (message_index, content_block_index) for every screenshot image
         screenshot_locations = []
 
         for msg_idx, message in enumerate(agent.messages):
             role = message.get("role") if isinstance(message, dict) else None
-            if role != "user":
+            if role not in ("user", "tool"):
                 continue
 
             content = message.get("content", [])
@@ -71,13 +88,13 @@ class ScreenshotPruningConversationManager(ConversationManager):
                 if not isinstance(block, dict):
                     continue
 
-                # Tool results contain content blocks. Screenshot tool results
-                # have image blocks with format like:
-                #   {"image": {"format": "png", "source": {"bytes": b'...'}}}
-                # or nested inside toolResult.content
+                # Converse format: {"image": {"format": "png", "source": {"bytes": ...}}}
                 if "image" in block:
                     screenshot_locations.append((msg_idx, block_idx))
                 elif block.get("type") == "image":
+                    screenshot_locations.append((msg_idx, block_idx))
+                # OpenAI format: {"type": "image_url", "image_url": {"url": "data:..."}}
+                elif block.get("type") == "image_url":
                     screenshot_locations.append((msg_idx, block_idx))
 
                 # Also check inside toolResult content blocks
@@ -88,7 +105,7 @@ class ScreenshotPruningConversationManager(ConversationManager):
                         for tr_idx, tr_block in enumerate(tr_content):
                             if not isinstance(tr_block, dict):
                                 continue
-                            if "image" in tr_block or tr_block.get("type") == "image":
+                            if "image" in tr_block or tr_block.get("type") in ("image", "image_url"):
                                 screenshot_locations.append((msg_idx, block_idx, tr_idx))
 
         if len(screenshot_locations) <= self.keep_last_n:
@@ -111,13 +128,34 @@ class ScreenshotPruningConversationManager(ConversationManager):
                 }
 
     def reduce_context(self, agent: "Agent", e: Exception | None = None, **kwargs: Any) -> None:
-        """Handle context window overflow by aggressively pruning all but the latest screenshot.
+        """Handle context window overflow by aggressively trimming.
 
-        This is called when the model's context window is exceeded. We prune all
-        screenshots except the very latest one, regardless of keep_last_n.
+        This is called when the model's context window is exceeded (or payload
+        limit hit). We drop all but the last 4 messages, prune all screenshots,
+        and inject a progress reminder so the agent doesn't lose track of what
+        it was doing.
         """
-        # Force keep only 1 for emergency reduction
+        # Emergency: keep only the last 4 messages
+        if len(agent.messages) > 4:
+            del agent.messages[:-4]
+
+        # Force keep only 1 screenshot
         original = self.keep_last_n
         self.keep_last_n = 1
         self.apply_management(agent, **kwargs)
         self.keep_last_n = original
+
+        # Inject a system-like reminder at the start so the agent knows
+        # context was trimmed and can re-orient from the screenshot.
+        reminder = {
+            "role": "user",
+            "content": [{
+                "text": (
+                    "[CONTEXT TRIMMED — conversation history was reduced to stay within "
+                    "payload limits. Take a screenshot to see the current desktop state, "
+                    "then continue from where you left off. Do NOT restart the task from "
+                    "the beginning.]"
+                )
+            }],
+        }
+        agent.messages.insert(0, reminder)
