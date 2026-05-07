@@ -124,7 +124,7 @@ def scale_fleet(fleet_name, region, desired):
     if current >= desired:
         running = fleet.get("ComputeCapacityStatus", {}).get("Running", 0)
         print(f"  Fleet already has {current} desired ({running} running)")
-        return current
+        return
 
     print(f"  Scaling fleet from {current} to {desired} instances...")
     client.update_fleet(
@@ -141,12 +141,11 @@ def scale_fleet(fleet_name, region, desired):
         state = fleet.get("State", "UNKNOWN")
         if state == "RUNNING" and running >= desired:
             print(f"  ✓ Fleet has {running} running instances ({available} available)")
-            return current
+            return
         print(f"  Waiting for instances... ({running}/{desired} running, {available} available, state: {state})")
         time.sleep(15)
 
     print(f"  ⚠ Fleet has {running}/{desired} instances after timeout — proceeding anyway")
-    return current
 
 
 def build_task_prompt(app):
@@ -189,48 +188,54 @@ def validate_app_batch(apps_batch, streaming_url, args, model, system_prompt, wo
     # so the request hits the correct regional deployment.
     endpoint = endpoint.replace("{region}", mcp_region)
 
+    # One MCP client per worker, reused across the entire app batch.
+    # Creating a new session per app would waste AppStream startup time
+    # and trigger server-side session binding conflicts.
+    mcp_client = None
+    last_err = None
+    for attempt in range(3):
+        try:
+            def mcp_factory():
+                return aws_iam_streamablehttp_client(
+                    endpoint=endpoint,
+                    aws_service=agent_common.DEFAULT_MCP_SERVICE,
+                    aws_region=mcp_region,
+                    aws_profile=mcp_profile,
+                    headers={
+                        "X-Amzn-AgentAccess-Streaming-Session-Url": streaming_url,
+                    },
+                )
+
+            mcp_client = MCPClient(mcp_factory, startup_timeout=args.mcp_timeout)
+            break
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                wait = 15 * (attempt + 1)
+                _worker_print(worker_id, f"  Connection failed, retrying in {wait}s...")
+                time.sleep(wait)
+
+    if mcp_client is None:
+        _worker_print(worker_id, f"⚠ Could not connect after 3 attempts: {last_err}")
+        for app in apps_batch:
+            results.append(ValidationResult(app_name=app["name"], status="ERROR", error=str(last_err)[:120]))
+        return results
+
     for app in apps_batch:
         result = ValidationResult(app_name=app["name"])
         start = time.time()
         _worker_print(worker_id, f"▶ Validating {app['name']}...")
 
         try:
-            # Retry MCP connection — session may still be initializing
-            agent = None
-            last_err = None
-            for attempt in range(3):
-                try:
-                    def mcp_factory():
-                        return aws_iam_streamablehttp_client(
-                            endpoint=endpoint,
-                            aws_service=agent_common.DEFAULT_MCP_SERVICE,
-                            aws_region=mcp_region,
-                            aws_profile=mcp_profile,
-                            headers={
-                                "X-Amzn-AgentAccess-Streaming-Session-Url": streaming_url,
-                            },
-                        )
+            conv_manager = ScreenshotPruningConversationManager() if not args.no_screenshot_pruning else None
 
-                    mcp_client = MCPClient(mcp_factory, startup_timeout=args.mcp_timeout)
-                    conv_manager = ScreenshotPruningConversationManager() if not args.no_screenshot_pruning else None
-
-                    agent = Agent(
-                        model=model,
-                        tools=[mcp_client],
-                        system_prompt=system_prompt,
-                        conversation_manager=conv_manager,
-                        callback_handler=callback,
-                    )
-                    break
-                except Exception as e:
-                    last_err = e
-                    if attempt < 2:
-                        wait = 15 * (attempt + 1)
-                        _worker_print(worker_id, f"  Connection failed, retrying in {wait}s...")
-                        time.sleep(wait)
-
-            if agent is None:
-                raise last_err
+            agent = Agent(
+                model=model,
+                tools=[mcp_client],
+                system_prompt=system_prompt,
+                conversation_manager=conv_manager,
+                callback_handler=callback,
+            )
 
             output = str(agent(build_task_prompt(app)) or "")
 
@@ -345,7 +350,7 @@ def main():
 
     # Scale fleet up if needed
     print(f"  Checking fleet capacity...")
-    original_capacity = scale_fleet(fleet_name, region, num_workers)
+    scale_fleet(fleet_name, region, num_workers)
 
     print(f"  Creating {num_workers} streaming sessions...")
     session_tag = uuid.uuid4().hex[:6]
@@ -392,19 +397,6 @@ def main():
     all_results.sort(key=lambda r: app_order.get(r.app_name, 999))
 
     print_report(all_results, total_time, num_workers)
-
-    # Scale fleet back down to original capacity
-    if original_capacity < num_workers:
-        print(f"\n  Scaling fleet back to {original_capacity} instance(s)...")
-        try:
-            appstream = boto3.client("appstream", region_name=region)
-            appstream.update_fleet(
-                Name=fleet_name,
-                ComputeCapacity={"DesiredInstances": original_capacity},
-            )
-            print(f"  ✓ Fleet scaled back to {original_capacity}")
-        except Exception as e:
-            print(f"  ⚠ Could not scale down: {e}")
 
     # Save report
     report_path = os.path.join(agent_dir, "metrics", f"validation_{time.strftime('%Y%m%d_%H%M%S')}.json")
