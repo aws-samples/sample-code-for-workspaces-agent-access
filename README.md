@@ -8,7 +8,7 @@ Amazon WorkSpaces Applications enables agents to connect to streaming sessions a
 The Quick Start helps you get setup with:
 - **AWS account** with permission to create Amazon WorkSpaces Applications fleets/stacks and invoke Amazon Bedrock
 - **AWS CLI v2** — [install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-- **Python 3.11+** — [install guide](https://www.python.org/downloads/)
+- **Python 3.10+** — [install guide](https://www.python.org/downloads/)
 - **Valid AWS credentials** configured (run `aws sts get-caller-identity` to verify)
 - **bash** on Windows — the deploy step runs via [Git for Windows](https://git-scm.com/download/win) (`winget install -e --id Git.Git`) or WSL (`wsl --install`)
 
@@ -97,6 +97,7 @@ python3 agents/agent_creator/agent.py --update agents/<your_workflow>
 
 ```
 sample-code-for-workspaces-agent-access/
+├── quickstart.py                # Minimal self-contained example (~60 lines)
 ├── agents/
 │   ├── agent_creator/          # Interactive agent builder
 │   ├── application_validation/ # Single-app validation
@@ -212,6 +213,18 @@ The AgentCore handler accepts `streaming_url` directly from the invocation paylo
 - No resource-based policies that grant broad cross-account invoke access.
 
 For production multi-tenant deployments, add a signed-grant flow: the caller passes an opaque `session_id`, the handler resolves it against a DynamoDB table that records the issuing principal, and rejects cross-principal lookups.
+
+## Appendix: Integrate Into Your Own Agent
+
+If you already have a WorkSpaces Applications fleet deployed and want to add agent access to your own codebase, see [`quickstart.py`](quickstart.py) — a self-contained ~60-line example with no dependencies on this repo's `lib/`:
+
+```bash
+pip install strands-agents mcp-proxy-for-aws boto3
+STREAMING_URL=$(scripts/streaming_url.sh)
+python3 quickstart.py "$STREAMING_URL"
+```
+
+The full framework in `agents/` and `lib/` adds retry logic, screenshot pruning, metrics, and multi-model support — but `quickstart.py` is all you need to connect an existing agent to a remote desktop.
 
 ## References
 
