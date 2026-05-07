@@ -20,45 +20,40 @@ echo "WorkSpaces Agent Framework - Installation"
 echo "=========================================="
 echo ""
 
-# --- 1. System dependencies ---
-echo "1. Checking system dependencies..."
-
-# Version check happens in step 2; here we just confirm *some* python3 exists.
-if ! command -v python3 &> /dev/null \
-    && ! command -v python3.10 &> /dev/null \
-    && ! command -v python3.11 &> /dev/null \
-    && ! command -v python3.12 &> /dev/null; then
-    echo -e "${YELLOW}⚠${NC}  Python 3 not found. Install Python 3.10+ and try again."
-    exit 1
-fi
-echo -e "${GREEN}✓${NC} Python 3 found"
-
-# --- 2. Python virtual environment ---
-echo ""
-echo "2. Setting up Python environment..."
+# --- 1. Python virtual environment ---
+echo "1. Setting up Python environment..."
 
 PYTHON_CMD=""
 MIN_MINOR=10
-for cmd in python3.12 python3.11 python3.10; do
-    if command -v $cmd &> /dev/null; then
-        PYTHON_CMD=$cmd
-        break
-    fi
-done
 
-# Fall back to `python3` only if it reports >= 3.10
-if [ -z "$PYTHON_CMD" ] && command -v python3 &> /dev/null; then
+# Check `python3` first, then try versioned binaries as fallback.
+if command -v python3 &> /dev/null; then
     if python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,$MIN_MINOR) else 1)" 2>/dev/null; then
         PYTHON_CMD=python3
     fi
 fi
 
 if [ -z "$PYTHON_CMD" ]; then
+    for cmd in $(compgen -c python3. 2>/dev/null | sort -t. -k2 -rn | uniq); do
+        if command -v "$cmd" &> /dev/null; then
+            if "$cmd" -c "import sys; sys.exit(0 if sys.version_info >= (3,$MIN_MINOR) else 1)" 2>/dev/null; then
+                PYTHON_CMD="$cmd"
+                break
+            fi
+        fi
+    done
+fi
+
+if [ -z "$PYTHON_CMD" ]; then
     echo -e "${RED}✗${NC} Python 3.10+ not found."
-    echo "  Install Python 3.10 or newer, then re-run this script."
-    echo "  On Amazon Linux 2023: sudo dnf install -y python3.11 python3.11-pip"
-    echo "  On CloudShell: CloudShell ships Python 3.9 by default."
-    echo "                 Install 3.11 with: sudo dnf install -y python3.11 python3.11-pip"
+    echo ""
+    echo "  Please install Python 3.10 or newer, then re-run this script."
+    echo ""
+    echo "  Suggested install commands:"
+    echo "    macOS:          brew install python@3.12"
+    echo "    Ubuntu/Debian:  sudo apt install -y python3 python3-venv"
+    echo "    Amazon Linux:   sudo dnf install -y python3.11 python3.11-pip"
+    echo "    Windows:        https://www.python.org/downloads/"
     exit 1
 fi
 

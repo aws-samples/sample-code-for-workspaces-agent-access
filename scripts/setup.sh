@@ -138,14 +138,43 @@ ok "Signed in as: $CALLER_ARN"
 ok "Account: $CALLER_ACCOUNT | Region: $REGION | Fleet: $FLEET_NAME"
 
 # ── Step 2: Python ────────────────────────────────────────────
-separator "Step 2/7: Installing Python 3.11"
+separator "Step 2/7: Checking Python 3.10+"
 
-if command -v python3.11 &>/dev/null; then
-  ok "Python 3.11 is already installed."
+MIN_MINOR=10
+PYTHON_OK=""
+
+if command -v python3 &>/dev/null; then
+  if python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,$MIN_MINOR) else 1)" 2>/dev/null; then
+    PYTHON_OK=1
+  fi
+fi
+
+if [ -z "$PYTHON_OK" ]; then
+  for cmd in $(compgen -c python3. 2>/dev/null | sort -t. -k2 -rn | uniq); do
+    if command -v "$cmd" &>/dev/null; then
+      if "$cmd" -c "import sys; sys.exit(0 if sys.version_info >= (3,$MIN_MINOR) else 1)" 2>/dev/null; then
+        PYTHON_OK=1
+        break
+      fi
+    fi
+  done
+fi
+
+if [ -n "$PYTHON_OK" ]; then
+  ok "Python 3.10+ found: $(python3 --version 2>/dev/null || echo 'unknown')"
 else
-  info "Installing python3.11 and python3.11-pip..."
-  sudo yum install -y python3.11 python3.11-pip > /dev/null 2>&1
-  ok "Python 3.11 installed."
+  echo ""
+  echo -e "  ${RED}Python 3.10+ is required but was not found.${NC}"
+  echo ""
+  echo "  Please install Python 3.10 or newer, then re-run this script."
+  echo ""
+  echo "  Suggested install commands:"
+  echo "    macOS:          brew install python@3.12"
+  echo "    Ubuntu/Debian:  sudo apt install -y python3 python3-venv"
+  echo "    Amazon Linux:   sudo dnf install -y python3.11 python3.11-pip"
+  echo "    Windows:        https://www.python.org/downloads/"
+  echo ""
+  fail "Python 3.10+ not found. Install it and re-run: bash scripts/setup.sh"
 fi
 
 # ── Step 3: Agent dependencies ────────────────────────────────
