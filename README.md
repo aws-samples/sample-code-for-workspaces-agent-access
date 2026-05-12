@@ -221,10 +221,7 @@ The [AgentCore Harness](https://docs.aws.amazon.com/bedrock-agentcore/latest/dev
 
 ```bash
 # Deploy (creates Gateway + Harness)
-./scripts/deploy_agentcore_harness.sh --region us-east-1
-
-# Navigate to the project
-cd .agentcore-build/WSAgentHarness
+./scripts/deploy_agentcore_harness.sh
 ```
 
 Prerequisites: Node.js 20+, `agentcore` CLI preview channel (`npm install -g @aws/agentcore@preview`), Python 3.10+ with `boto3`.
@@ -236,6 +233,8 @@ Use the [AgentCore Harness Playground](https://us-east-1.console.aws.amazon.com/
 Or run locally:
 
 ```bash
+# Navigate to the project
+cd .agentcore-build/WSAgentHarness
 agentcore dev
 ```
 
