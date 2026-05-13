@@ -98,6 +98,7 @@ python3 agents/agent_creator/agent.py --update agents/<your_workflow>
 ```
 sample-code-for-workspaces-agent-access/
 ├── quickstart.py                # Minimal self-contained example (~60 lines)
+├── AGENTS.md                    # Developer guide (tools, architecture, IDE setup)
 ├── agents/
 │   ├── agent_creator/          # Interactive agent builder
 │   ├── application_validation/ # Single-app validation
