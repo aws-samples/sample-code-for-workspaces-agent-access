@@ -157,11 +157,26 @@ agent("Open Notepad and type 'Hello World'")
 ### Pattern 2: AgentCore Harness (Zero Code)
 
 ```bash
-# Deploy Gateway + Harness
+# Deploy Gateway + Lambda Proxy + Harness
 ./scripts/deploy_agentcore_harness.sh --region us-east-1
 
 # Use via Console Playground or agentcore dev
 ```
+
+**Architecture:** The harness uses a Lambda proxy target because the AgentCore Gateway cannot connect directly to the Agent Access MCP server (the MCP server requires a streaming URL for any connection, including health checks). The Lambda handles streaming URL lifecycle, session initialization, and tool call forwarding.
+
+```
+Harness → Gateway → Lambda Proxy → (SigV4) → Agent Access MCP Server → Desktop
+```
+
+**Key implementation details:**
+- The Lambda creates/caches streaming URLs from AppStream (`CreateStreamingURL`)
+- On first invocation, it initializes the MCP session and polls `tools/list` until DCV tools are ready (up to 60s)
+- Tool names are prefixed with `agentaccess___` by the MCP server — the Lambda strips this on input and adds it on output
+- The Lambda timeout is 180s to accommodate DCV session warmup on cold starts
+
+**Known limitations:**
+- First tool call after a cold start takes 10-30s while the desktop session connects
 
 ### Pattern 3: IDE MCP Server Configuration
 
@@ -226,3 +241,14 @@ Optional flags:
 ```
 pip install strands-agents mcp-proxy-for-aws boto3
 ```
+
+
+## Known Issues & Workarounds
+
+### Tool Name Prefixing
+
+The MCP server prefixes all tool names with `agentaccess___` (e.g., `agentaccess___screenshot`, `agentaccess___left_click`). When using the Lambda proxy, tool names are automatically mapped. When connecting directly, use the unprefixed names — the `mcp-proxy-for-aws` transport handles the prefix transparently.
+
+### DCV Session Warmup
+
+After creating a streaming URL, the DCV desktop session takes 5-30 seconds to connect. During this time, `tools/call` returns `"Unknown tool"` errors. The Lambda proxy handles this by polling `tools/list` until tools appear. For custom agents, implement retry logic or use `lib/agent_common.py` which retries MCP connection automatically.
