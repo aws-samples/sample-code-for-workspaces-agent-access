@@ -367,6 +367,26 @@ def create_mcp_client_factory(args, root_dir=None):
     print(f"  MCP transport: remote ({endpoint}, signed for {mcp_service}/{mcp_region})")
     sys.stdout.flush()
 
+    # Enable logging of the server-side MCP session ID.
+    # The mcp library logs "Received session ID: ..." at INFO level.
+    import logging as _logging
+    _mcp_logger = _logging.getLogger("mcp.client.streamable_http")
+    _mcp_logger.setLevel(_logging.INFO)
+    if not _mcp_logger.handlers:
+        _h = _logging.StreamHandler(sys.stdout)
+        _h.setFormatter(_logging.Formatter("  MCP server session: %(message)s"))
+        _h.addFilter(lambda r: "Received session ID" in r.getMessage())
+        # Strip the "Received session ID: " prefix from the message
+        class _SessionIdFilter(_logging.Filter):
+            def filter(self, record):
+                if "Received session ID" in record.getMessage():
+                    record.msg = record.msg.replace("Received session ID: ", "")
+                    return True
+                return False
+        _h.filters = []
+        _h.addFilter(_SessionIdFilter())
+        _mcp_logger.addHandler(_h)
+
     def factory():
         return aws_iam_streamablehttp_client(
             endpoint=endpoint,
@@ -392,7 +412,7 @@ def build_mcp_client(mcp_factory, startup_timeout, label=None):
     session_id = getattr(client, "_session_id", None)
     if session_id:
         prefix = f"[{label}] " if label else ""
-        sys.stdout.write(f"  {prefix}MCP client session: {session_id}\n")
+        sys.stdout.write(f"  {prefix}Strands session: {session_id}\n")
         sys.stdout.flush()
     return client
 
