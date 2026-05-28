@@ -272,6 +272,16 @@ class StrandsAgentLogger:
         )
         if error_str:
             self.file_logger.error(f"Tool Error: {error_str}")
+            # Detect permanently dead MCP connection (e.g. agent disable).
+            # If the same connection error repeats 5+ times, raise to break the loop.
+            if "client session is not running" in error_str.lower() or "connection to the mcp server was closed" in error_str.lower():
+                self._consecutive_mcp_failures = getattr(self, '_consecutive_mcp_failures', 0) + 1
+                if self._consecutive_mcp_failures >= 5:
+                    raise RuntimeError("MCP connection permanently lost (5 consecutive failures). Session may have been disabled.")
+            else:
+                self._consecutive_mcp_failures = 0
+        else:
+            self._consecutive_mcp_failures = 0
         if short_name != "screenshot":
             status = "✓" if success else "✗"
             self.file_logger.info(f"{status} {tool_name}")

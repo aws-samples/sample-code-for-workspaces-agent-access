@@ -400,6 +400,23 @@ def create_mcp_client_factory(args, root_dir=None):
     return factory
 
 
+class _SanitizedMCPClient(MCPClient):
+    """MCPClient that sanitizes tool names for Bedrock compatibility.
+
+    Bedrock Converse API requires tool names to match [a-zA-Z0-9_-]+.
+    Forwarded MCP tools use dots (e.g. "forwarded___server.tool") which
+    must be replaced. This subclass replaces dots with dashes in the
+    agent-facing name while preserving the original for MCP calls.
+    """
+
+    def list_tools_sync(self, *args, **kwargs):
+        tools = super().list_tools_sync(*args, **kwargs)
+        for tool in tools:
+            if "." in tool.tool_name:
+                tool._agent_tool_name = tool._agent_tool_name.replace(".", "-")
+        return tools
+
+
 def build_mcp_client(mcp_factory, startup_timeout, label=None):
     """Construct an MCPClient and log the Strands client-side session UUID.
 
@@ -407,8 +424,10 @@ def build_mcp_client(mcp_factory, startup_timeout, label=None):
     CloudWatch / CloudTrail events when multiple MCP sessions are active
     concurrently. `label` is an optional prefix (e.g. worker tag) printed
     alongside the session id.
+
+    Tool names containing dots are sanitized to dashes for Bedrock compatibility.
     """
-    client = MCPClient(mcp_factory, startup_timeout=startup_timeout)
+    client = _SanitizedMCPClient(mcp_factory, startup_timeout=startup_timeout)
     session_id = getattr(client, "_session_id", None)
     if session_id:
         prefix = f"[{label}] " if label else ""
@@ -471,6 +490,7 @@ def _is_retryable_error(error_str):
         "connection to the mcp server was closed", "mcperror",
         "401 unauthorized", "iserror", "tools\nfield required",
         "length limit exceeded",  # bedrock-mantle payload overflow
+        "client session is not running",  # MCP session dropped (e.g. agent disable)
     ])
 
 
