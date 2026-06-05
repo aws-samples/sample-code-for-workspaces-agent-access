@@ -69,6 +69,24 @@ python3 agents/multi_agent_validation/agent.py
 
 Fleets can expose additional tools beyond desktop interaction via MCP Redirection. When enabled, `tools/list` returns both desktop tools (`screenshot`, `left_click`, etc.) and forwarded tools (prefixed with `forwarded___`). These forwarded tools call external APIs or services configured on the fleet — your agent uses them like any other MCP tool.
 
+### Domain Join (AD-joined fleets)
+
+For fleets joined to an Active Directory domain, agents authenticate via SAML assertion instead of a streaming URL. The assertion is passed in the MCP `_meta` field on the initialize request:
+
+```bash
+python3 agents/pdf_extractor_demo/agent.py \
+    --saml-assertion "$(cat assertion.b64)" \
+    --stack-arn "arn:aws:appstream:us-east-1:123456789012:stack/MyDJStack"
+```
+
+Prerequisites:
+- AppStream fleet joined to an AD domain with Certificate-Based Authentication (CBA) enabled
+- IAM SAML provider registered with your IdP certificate
+- IAM role trusting the SAML provider
+- Base64-encoded SAML assertion from your IdP (Okta, Entra ID, Ping, etc.)
+
+The `--streaming-url` flag is not needed — the MCP server provisions a desktop session bound to the AD user identity in the assertion.
+
 ## Create Your Own Agent
 There's a library provided in `lib/agent_common.py` that you can use to create your own agent. We've also provided an agent creator with prompts to describe your workflow:
 ```bash
@@ -96,6 +114,8 @@ python3 agents/agent_creator/agent.py --update agents/<your_workflow>
 | `--no-screenshot-pruning` | off | Keep all screenshots in conversation context |
 | `--mcp-profile PROFILE` | default | AWS profile for SigV4 signing to the MCP endpoint |
 | `--llm-profile PROFILE` | default | AWS profile for Bedrock LLM calls |
+| `--saml-assertion B64` | | Base64-encoded SAML assertion for Domain Join (replaces `--streaming-url`) |
+| `--stack-arn ARN` | | AppStream stack ARN (required with `--saml-assertion`) |
 
 ## Project Structure
 

@@ -95,6 +95,10 @@ def create_base_parser(description):
                        help='AWS profile for Bedrock LLM calls (if different from default)')
     parser.add_argument('--bedrock-api-key', metavar='KEY',
                        help='Bedrock API key for bedrock-mantle (non-Anthropic models).')
+    parser.add_argument('--saml-assertion', metavar='B64',
+                       help='Base64-encoded SAML assertion for Domain Join (AD-joined fleets)')
+    parser.add_argument('--stack-arn', metavar='ARN',
+                       help='AppStream stack ARN (required with --saml-assertion)')
     parser.add_argument('--fleet-name', metavar='NAME',
                        help='AppStream fleet name (for streaming URL generation)')
     parser.add_argument('--stack-name', metavar='NAME',

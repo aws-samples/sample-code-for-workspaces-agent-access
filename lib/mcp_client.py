@@ -60,7 +60,12 @@ def _is_remote_mcp(args):
 
 
 def create_mcp_client_factory(args, root_dir=None):
-    """Create the MCP client transport factory for the Agent Access MCP Server."""
+    """Create the MCP client transport factory for the Agent Access MCP Server.
+
+    Supports two auth paths:
+      - Streaming URL (standard): passes URL as header
+      - Domain Join (SAML): injects assertion via _meta on initialize
+    """
     if not _is_remote_mcp(args):
         raise RuntimeError(
             "No MCP endpoint configured.\n"
@@ -76,7 +81,74 @@ def create_mcp_client_factory(args, root_dir=None):
     if not mcp_service:
         raise RuntimeError("AWS_SERVICE_NAME is required.")
     endpoint = endpoint.replace("{region}", mcp_region)
-    streaming_url = args.streaming_url
+
+    # Check for Domain Join mode (SAML assertion)
+    saml_assertion = getattr(args, 'saml_assertion', None)
+    if saml_assertion:
+        stack_arn = getattr(args, 'stack_arn', None)
+        if not stack_arn:
+            raise RuntimeError("--stack-arn is required for Domain Join mode.")
+
+        print(f"  MCP transport: Domain Join via _meta ({endpoint})")
+        sys.stdout.flush()
+
+        from contextlib import asynccontextmanager
+        from mcp.shared.message import SessionMessage
+
+        meta_values = {
+            "aws.agentaccess/workspacesApplicationsSamlAssertion": saml_assertion,
+            "aws.agentaccess/workspacesApplicationsStackArn": stack_arn,
+        }
+
+        class _MetaInjectingWriteStream:
+            """Wraps MCP write stream to inject _meta into the initialize request."""
+
+            def __init__(self, write_stream):
+                self._write_stream = write_stream
+                self._injected = False
+
+            async def send(self, session_message: SessionMessage) -> None:
+                if not self._injected:
+                    msg = session_message.message.root
+                    if hasattr(msg, "method") and msg.method == "initialize":
+                        params = msg.params
+                        if isinstance(params, dict):
+                            params.setdefault("_meta", {}).update(meta_values)
+                        elif hasattr(params, "model_extra"):
+                            if not hasattr(params, "_meta") or params._meta is None:
+                                params._meta = {}
+                            params._meta.update(meta_values)
+                        self._injected = True
+                await self._write_stream.send(session_message)
+
+            async def aclose(self) -> None:
+                await self._write_stream.aclose()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                await self.aclose()
+
+        def factory():
+            @asynccontextmanager
+            async def wrapped():
+                async with aws_iam_streamablehttp_client(
+                    endpoint=endpoint,
+                    aws_service=mcp_service,
+                    aws_region=mcp_region,
+                    aws_profile=mcp_profile,
+                    timeout=300,
+                    sse_read_timeout=300,
+                ) as (read_stream, write_stream, get_session_id):
+                    yield read_stream, _MetaInjectingWriteStream(write_stream), get_session_id
+
+            return wrapped()
+
+        return factory
+
+    # Standard path: streaming URL as header
+    streaming_url = getattr(args, 'streaming_url', None) or ""
 
     print(f"  MCP transport: remote ({endpoint}, signed for {mcp_service}/{mcp_region})")
     sys.stdout.flush()
