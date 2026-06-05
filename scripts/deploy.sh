@@ -424,10 +424,12 @@ body = json.dumps({
     'AgentAccessConfig': {
         'Settings': [
             {'AgentAction': 'COMPUTER_VISION', 'Permission': 'ENABLED'},
-            {'AgentAction': 'COMPUTER_INPUT', 'Permission': 'ENABLED'}
+            {'AgentAction': 'COMPUTER_INPUT', 'Permission': 'ENABLED'},
+            {'AgentAction': 'FORWARD_MCP_TOOLS', 'Permission': 'ENABLED'}
         ],
         'ScreenResolution': 'W_1280xH_720',
-        'ScreenImageFormat': 'PNG'
+        'ScreenImageFormat': 'PNG',
+        'UserControlMode': 'VIEW_STOP'
     }
 })
 headers = {

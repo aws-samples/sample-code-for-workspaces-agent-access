@@ -65,6 +65,10 @@ python3 agents/generic_cua/agent.py --streaming-url "$STREAMING_URL"
 python3 agents/multi_agent_validation/agent.py
 ```
 
+### MCP Redirection (forwarded tools)
+
+Fleets can expose additional tools beyond desktop interaction via MCP Redirection. When enabled, `tools/list` returns both desktop tools (`screenshot`, `left_click`, etc.) and forwarded tools (prefixed with `forwarded___`). These forwarded tools call external APIs or services configured on the fleet — your agent uses them like any other MCP tool.
+
 ## Create Your Own Agent
 There's a library provided in `lib/agent_common.py` that you can use to create your own agent. We've also provided an agent creator with prompts to describe your workflow:
 ```bash
@@ -107,7 +111,10 @@ sample-code-for-workspaces-agent-access/
 │   ├── paint_demo/             # MS Paint drawing demo
 │   └── pdf_extractor_demo/     # PDF → Writer extraction demo
 ├── lib/
-│   ├── agent_common.py         # Shared infrastructure (parser, retry, MCP)
+│   ├── agent_common.py         # Shared infrastructure (re-exports from sub-modules)
+│   ├── model.py                # Bedrock model creation + multi-model support
+│   ├── mcp_client.py           # MCP transport, endpoint resolution, tool names
+│   ├── retry.py                # Connection retry logic, error classification
 │   ├── screenshot_pruning_manager.py  # Token-saving screenshot manager
 │   └── strands_logger.py       # Metrics and logging
 ├── scripts/
