@@ -92,58 +92,21 @@ def create_mcp_client_factory(args, root_dir=None):
         print(f"  MCP transport: Domain Join via _meta ({endpoint})")
         sys.stdout.flush()
 
-        from contextlib import asynccontextmanager
-        from mcp.shared.message import SessionMessage
-
         meta_values = {
             "aws.agentaccess/workspacesApplicationsSamlAssertion": saml_assertion,
             "aws.agentaccess/workspacesApplicationsStackArn": stack_arn,
         }
 
-        class _MetaInjectingWriteStream:
-            """Wraps MCP write stream to inject _meta into the initialize request."""
-
-            def __init__(self, write_stream):
-                self._write_stream = write_stream
-                self._injected = False
-
-            async def send(self, session_message: SessionMessage) -> None:
-                if not self._injected:
-                    msg = session_message.message.root
-                    if hasattr(msg, "method") and msg.method == "initialize":
-                        params = msg.params
-                        if isinstance(params, dict):
-                            params.setdefault("_meta", {}).update(meta_values)
-                        elif hasattr(params, "model_extra"):
-                            if not hasattr(params, "_meta") or params._meta is None:
-                                params._meta = {}
-                            params._meta.update(meta_values)
-                        self._injected = True
-                await self._write_stream.send(session_message)
-
-            async def aclose(self) -> None:
-                await self._write_stream.aclose()
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                await self.aclose()
-
         def factory():
-            @asynccontextmanager
-            async def wrapped():
-                async with aws_iam_streamablehttp_client(
-                    endpoint=endpoint,
-                    aws_service=mcp_service,
-                    aws_region=mcp_region,
-                    aws_profile=mcp_profile,
-                    timeout=300,
-                    sse_read_timeout=300,
-                ) as (read_stream, write_stream, get_session_id):
-                    yield read_stream, _MetaInjectingWriteStream(write_stream), get_session_id
-
-            return wrapped()
+            return aws_iam_streamablehttp_client(
+                endpoint=endpoint,
+                aws_service=mcp_service,
+                aws_region=mcp_region,
+                aws_profile=mcp_profile,
+                metadata=meta_values,
+                timeout=300,
+                sse_read_timeout=300,
+            )
 
         return factory
 
