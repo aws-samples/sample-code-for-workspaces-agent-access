@@ -183,6 +183,11 @@ sample-code-for-workspaces-agent-access/
 - Confirm the Stack was created with AgentAccessConfig (COMPUTER_INPUT, COMPUTER_VISION all ENABLED).
 - Recreate the stack if needed — see `scripts/deploy.sh`.
 
+**Fleet fails to start or "AccessDeniedException" from AppStream**
+- Your account may be missing the AppStream service role. AppStream requires a service-linked role to manage resources on your behalf.
+- Check if it exists: `aws iam get-role --role-name AWSServiceRoleForAppStream`
+- If missing, create it by visiting the [AppStream 2.0 console](https://console.aws.amazon.com/appstream2) or see [Checking for the IAM service access](https://docs.aws.amazon.com/appstream2/latest/developerguide/controlling-access-checking-for-iam-service-access.html).
+
 **Screenshot pruning**
 - By default, old screenshots are removed from conversation context to reduce token usage. Use `--no-screenshot-pruning` to keep all screenshots (useful for debugging).
 
