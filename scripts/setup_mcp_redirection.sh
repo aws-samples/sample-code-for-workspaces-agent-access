@@ -7,6 +7,7 @@
 #
 # Prerequisites:
 #   - AWS credentials for the target account
+#   - VPC deployed (run scripts/deploy.sh first, or scripts/setup.sh)
 #   - IAM roles: MCP-ImageBuild-Profile, AppStreamImageImportRole
 #
 # Usage:
@@ -178,7 +179,11 @@ if [ -z "$FLEET_EXISTS" ] || [ "$FLEET_EXISTS" = "None" ]; then
     --image-name "$IMAGE_NAME" \
     --fleet-type "ON_DEMAND" \
     --compute-capacity DesiredInstances=1 \
-    --stream-view "DESKTOP" > /dev/null
+    --stream-view "DESKTOP" \
+    --no-enable-default-internet-access \
+    --vpc-config "SubnetIds=$(aws ec2 describe-subnets --region "$REGION" \
+      --filters "Name=tag:Name,Values=workspaces-agent-demo-vpc-Private-*" \
+      --query 'Subnets[].SubnetId' --output text | tr '\t' ',')" > /dev/null
   echo "  Created fleet: $FLEET_NAME"
 else
   aws appstream update-fleet --name "$FLEET_NAME" --region "$REGION" \
