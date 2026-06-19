@@ -1,3 +1,5 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
 """Filesystem MCP server — Python equivalent of @modelcontextprotocol/server-filesystem."""
 import os
 import sys

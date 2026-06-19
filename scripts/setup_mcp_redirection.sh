@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
 # MCP Redirection Fleet Setup Script
 # Builds a Windows Server 2025 AMI with MCP servers, imports to AppStream,
 # and creates a fleet + stack with FORWARD_MCP_TOOLS enabled.

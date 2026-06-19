@@ -1,3 +1,5 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
 """Fetch MCP server — Python equivalent of @modelcontextprotocol/server-fetch.
 
 Fetches web content and converts HTML to markdown for LLM consumption.
