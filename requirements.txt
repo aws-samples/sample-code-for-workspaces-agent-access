@@ -54,7 +54,7 @@ cffi==2.0.0
     # via cryptography
 click==8.3.3
     # via uvicorn
-cryptography==46.0.7
+cryptography==48.0.1
     # via
     #   authlib
     #   joserfc
@@ -193,7 +193,7 @@ pydantic-settings==2.14.0
     # via mcp
 pygments==2.20.0
     # via rich
-pyjwt[crypto]==2.12.1
+pyjwt[crypto]==2.13.0
     # via mcp
 pyperclip==1.11.0
     # via fastmcp
@@ -203,7 +203,7 @@ python-dotenv==1.2.2
     # via
     #   fastmcp
     #   pydantic-settings
-python-multipart==0.0.27
+python-multipart==0.0.31
     # via mcp
 pyyaml==6.0.3
     # via
@@ -236,7 +236,7 @@ sniffio==1.3.1
     # via openai
 sse-starlette==3.3.4
     # via mcp
-starlette==1.0.1
+starlette==1.3.1
     # via
     #   mcp
     #   sse-starlette
