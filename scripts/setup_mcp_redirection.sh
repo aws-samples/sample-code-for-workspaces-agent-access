@@ -167,17 +167,82 @@ while true; do
   sleep 60
 done
 
-# ─── Step 10: Update fleet + create stack ───
-echo "Step 10: Setting up fleet and stack..."
+# ─── Step 10: Create fleet + stack ───
+echo "Step 10: Creating fleet and stack..."
+
+# Create or update fleet
+FLEET_EXISTS=$(aws appstream describe-fleets --names "$FLEET_NAME" --region "$REGION" --query 'Fleets[0].Name' --output text 2>/dev/null || echo "")
+if [ -z "$FLEET_EXISTS" ] || [ "$FLEET_EXISTS" = "None" ]; then
+  aws appstream create-fleet --name "$FLEET_NAME" --region "$REGION" \
+    --instance-type "GeneralPurpose.t3.large" \
+    --image-name "$IMAGE_NAME" \
+    --fleet-type "ON_DEMAND" \
+    --compute-capacity DesiredInstances=1 \
+    --stream-view "DESKTOP" > /dev/null
+  echo "  Created fleet: $FLEET_NAME"
+else
+  aws appstream update-fleet --name "$FLEET_NAME" --region "$REGION" \
+    --image-name "$IMAGE_NAME" > /dev/null 2>&1 || true
+  echo "  Updated fleet: $FLEET_NAME (image: $IMAGE_NAME)"
+fi
+
+aws appstream start-fleet --name "$FLEET_NAME" --region "$REGION" 2>/dev/null || true
+
+# Create stack with AgentAccessConfig (FORWARD_MCP_TOOLS enabled)
+STACK_EXISTS=$(aws appstream describe-stacks --names "$STACK_NAME" --region "$REGION" --query 'Stacks[0].Name' --output text 2>/dev/null || echo "")
+if [ -z "$STACK_EXISTS" ] || [ "$STACK_EXISTS" = "None" ]; then
+  SIGV4_PYTHON="${SCRIPT_DIR}/../venv/bin/python"
+  [ ! -x "$SIGV4_PYTHON" ] && SIGV4_PYTHON="python3"
+  "$SIGV4_PYTHON" -c "
+import json, urllib.request
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
+from botocore.session import Session
+endpoint = 'https://appstream2.${REGION}.amazonaws.com'
+body = json.dumps({
+    'Name': '$STACK_NAME',
+    'AgentAccessConfig': {
+        'Settings': [
+            {'AgentAction': 'COMPUTER_VISION', 'Permission': 'ENABLED'},
+            {'AgentAction': 'COMPUTER_INPUT', 'Permission': 'ENABLED'},
+            {'AgentAction': 'FORWARD_MCP_TOOLS', 'Permission': 'ENABLED'}
+        ],
+        'ScreenResolution': 'W_1280xH_720',
+        'ScreenImageFormat': 'PNG',
+        'UserControlMode': 'VIEW_STOP'
+    }
+})
+headers = {'Content-Type': 'application/x-amz-json-1.1', 'X-Amz-Target': 'PhotonAdminProxyService.CreateStack'}
+creds = Session().get_credentials().get_frozen_credentials()
+req = AWSRequest(method='POST', url=endpoint, data=body, headers=headers)
+SigV4Auth(creds, 'appstream', '$REGION').add_auth(req)
+r = urllib.request.urlopen(urllib.request.Request(req.url, data=body.encode(), headers=dict(req.headers), method='POST'))
+print('  Created stack: $STACK_NAME')
+" || echo "  Stack creation failed (may already exist)"
+else
+  echo "  Stack exists: $STACK_NAME"
+fi
+
+# Associate fleet with stack
+aws appstream associate-fleet --fleet-name "$FLEET_NAME" --stack-name "$STACK_NAME" --region "$REGION" 2>/dev/null || true
+
+# Wait for fleet to start
+echo "  Waiting for fleet to reach RUNNING state..."
+for i in $(seq 1 40); do
+  STATE=$(aws appstream describe-fleets --names "$FLEET_NAME" --region "$REGION" --query 'Fleets[0].State' --output text 2>/dev/null)
+  if [ "$STATE" = "RUNNING" ]; then echo "  Fleet is RUNNING."; break; fi
+  sleep 15
+done
+
 echo ""
 echo "=== SETUP COMPLETE ==="
 echo ""
-echo "Fleet: $FLEET_NAME (update with: aws appstream update-fleet --name $FLEET_NAME --image-name $IMAGE_NAME --region $REGION)"
-echo "Stack: $STACK_NAME"
-echo "MCP endpoint: $MCP_ENDPOINT"
+echo "  Fleet:  $FLEET_NAME (image: $IMAGE_NAME)"
+echo "  Stack:  $STACK_NAME"
+echo "  MCP:    $MCP_ENDPOINT"
 echo ""
-echo "Generate streaming URL:"
-echo "  aws appstream create-streaming-url --stack-name $STACK_NAME --fleet-name $FLEET_NAME --user-id test --validity 3600 --region $REGION --query StreamingURL --output text"
+echo "  Generate streaming URL:"
+echo "    aws appstream create-streaming-url --stack-name $STACK_NAME --fleet-name $FLEET_NAME --user-id test --validity 3600 --region $REGION --query StreamingURL --output text"
 echo ""
-echo "Test tools:"
-echo "  python3 list_tools.py \"\$STREAMING_URL\" \"$MCP_ENDPOINT\""
+echo "  Run an agent:"
+echo "    python3 agents/generic_cua/agent.py --streaming-url \"\$STREAMING_URL\""

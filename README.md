@@ -69,6 +69,14 @@ python3 agents/multi_agent_validation/agent.py
 
 Fleets can expose additional tools beyond desktop interaction via MCP Redirection. When enabled, `tools/list` returns both desktop tools (`screenshot`, `left_click`, etc.) and forwarded tools (prefixed with `forwarded___`). These forwarded tools call external APIs or services configured on the fleet — your agent uses them like any other MCP tool.
 
+To set up a fleet with custom MCP servers (requires ~30 min for AMI build + import):
+
+```bash
+./scripts/setup_mcp_redirection.sh --region us-east-1
+```
+
+This builds a Windows Server 2025 image with Python + FastMCP and two example servers (`filesystem`, `fetch`), imports it to WorkSpaces, and creates a fleet with `FORWARD_MCP_TOOLS` enabled. See `mcp_servers/` for the server source code.
+
 ### Domain Join (AD-joined fleets)
 
 For fleets joined to an Active Directory domain, agents authenticate via SAML assertion instead of a streaming URL. The assertion is passed in the MCP `_meta` field on the initialize request:
@@ -80,7 +88,7 @@ python3 agents/pdf_extractor_demo/agent.py \
 ```
 
 Prerequisites:
-- AppStream fleet joined to an AD domain with Certificate-Based Authentication (CBA) enabled
+- WorkSpaces Applications fleet joined to an AD domain with Certificate-Based Authentication (CBA) enabled
 - IAM SAML provider registered with your IdP certificate
 - IAM role trusting the SAML provider
 - Base64-encoded SAML assertion from your IdP (Okta, Entra ID, Ping, etc.)
@@ -104,7 +112,7 @@ python3 agents/agent_creator/agent.py --update agents/<your_workflow>
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--streaming-url URL` | *(required)* | AppStream streaming URL for the desktop session |
+| `--streaming-url URL` | *(required)* | WorkSpaces Applications streaming URL for the desktop session |
 | `--model-id ID` | `global.anthropic.claude-sonnet-4-6` | Bedrock model ID |
 | `--no-computer-use-tool` | off | Disable Claude's computer-use training optimizations |
 | `--mcp-timeout SECS` | `180` | MCP client startup timeout |
@@ -115,7 +123,7 @@ python3 agents/agent_creator/agent.py --update agents/<your_workflow>
 | `--mcp-profile PROFILE` | default | AWS profile for SigV4 signing to the MCP endpoint |
 | `--llm-profile PROFILE` | default | AWS profile for Bedrock LLM calls |
 | `--saml-assertion B64` | | Base64-encoded SAML assertion for Domain Join (replaces `--streaming-url`) |
-| `--stack-arn ARN` | | AppStream stack ARN (required with `--saml-assertion`) |
+| `--stack-arn ARN` | | WorkSpaces Applications stack ARN (required with `--saml-assertion`) |
 
 ## Project Structure
 
@@ -141,7 +149,7 @@ sample-code-for-workspaces-agent-access/
 │   ├── config.json             # Fleet, stack, VPC, MCP endpoint config
 │   ├── setup.sh                # One-step setup (macOS / Linux)
 │   ├── setup.ps1               # One-step setup (Windows)
-│   ├── streaming_url.sh        # Mint a fresh AppStream streaming URL
+│   ├── streaming_url.sh        # Mint a fresh WorkSpaces Applications streaming URL
 │   ├── deploy.sh               # Deploy VPC + Fleet + Stack
 │   ├── cleanup.sh              # Tear down all resources
 │   ├── deploy_agentcore.sh     # Deploy agent to Bedrock AgentCore Runtime
@@ -239,7 +247,7 @@ Cleanup:
 
 **Security: single-principal deployment only**
 
-The AgentCore handler accepts `streaming_url` directly from the invocation payload. Anyone with permission to invoke the runtime can drive any AppStream session the execution role can reach — there is no cross-invoker isolation in this demo.
+The AgentCore handler accepts `streaming_url` directly from the invocation payload. Anyone with permission to invoke the runtime can drive any WorkSpaces Applications session the execution role can reach — there is no cross-invoker isolation in this demo.
 
 **Do not expose the runtime to more than one principal.** Recommended configurations:
 
