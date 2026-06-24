@@ -5,15 +5,9 @@
 Fetches web content and converts HTML to markdown for LLM consumption.
 """
 import re
-import sys
 import urllib.request
 import urllib.error
 from html.parser import HTMLParser
-
-if sys.platform == "win32":
-    import ctypes
-    ctypes.windll.kernel32.FreeConsole()
-
 from fastmcp import FastMCP
 
 mcp = FastMCP("fetch")

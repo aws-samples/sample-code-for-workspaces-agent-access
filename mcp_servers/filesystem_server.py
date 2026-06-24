@@ -2,12 +2,6 @@
 # SPDX-License-Identifier: MIT-0
 """Filesystem MCP server — Python equivalent of @modelcontextprotocol/server-filesystem."""
 import os
-import sys
-
-if sys.platform == "win32":
-    import ctypes
-    ctypes.windll.kernel32.FreeConsole()
-
 from fastmcp import FastMCP
 
 mcp = FastMCP("filesystem")
