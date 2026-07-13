@@ -252,3 +252,38 @@ The MCP server prefixes all tool names with `agentaccess___` (e.g., `agentaccess
 ### DCV Session Warmup
 
 After creating a streaming URL, the DCV desktop session takes 5-30 seconds to connect. During this time, `tools/call` returns `"Unknown tool"` errors. The Lambda proxy handles this by polling `tools/list` until tools appear. For custom agents, implement retry logic or use `lib/agent_common.py` which retries MCP connection automatically.
+
+## Contributing
+
+### Local checks before a PR
+
+CI (`.github/workflows/ci.yml`) runs a fast, dependency-free gate on every push
+and pull request to `main`:
+
+1. **Byte-compiles** all Python under `agents/`, `lib/`, `scripts/`,
+   `mcp_servers/`, and the repo root (syntax / Python-version check on 3.10 and 3.12).
+2. **Validates** every `agents/**/skills/*.json` file parses as JSON.
+
+Run the exact same checks locally before opening a PR:
+
+```bash
+./scripts/ci_local.sh
+```
+
+Exit status `0` means both checks pass — the same contract as CI. The script
+needs only Python (no `venv`, AWS credentials, or runtime dependencies). Override
+the interpreter with `PYTHON_CMD=python3.10 ./scripts/ci_local.sh` to match a
+specific CI matrix version.
+
+> This gate intentionally does **not** install dependencies or run the agents —
+> it catches syntax errors and malformed skill files, not runtime behavior.
+> Full behavioral testing requires a live redirection/desktop fleet.
+
+### Adding a new demo agent
+
+A demo agent is a thin `agent.py` that calls `agent_common.run_standard_agent`,
+plus a `prompts/` directory (`system_prompt.md`, `task_prompt.md`) and an
+optional `skills/<name>.json`. Copy an existing agent (e.g. `agents/paint_demo`)
+as a starting point, then run `./scripts/ci_local.sh` to confirm it compiles and
+its skill JSON is valid. See `agents/mcp_redirection_demo` for an example that
+drives forwarded MCP tools.

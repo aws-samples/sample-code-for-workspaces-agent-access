@@ -1,0 +1,68 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# Lightweight CI: byte-compiles all Python and validates every skill JSON file.
+# Intentionally does NOT install runtime dependencies — this is a fast syntax /
+# structure gate, not a functional test. See tests/ (if added) for behavior tests.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  compile-and-validate:
+    name: Compile Python + validate skill JSON
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Byte-compile all Python sources
+        run: |
+          echo "Compiling agents/, lib/, scripts/, mcp_servers/, and root *.py ..."
+          python -m compileall -q agents lib scripts mcp_servers
+          # Root-level scripts (quickstart.py, etc.)
+          python -m compileall -q $(git ls-files '*.py' | grep -vE '^(agents|lib|scripts|mcp_servers)/' || true)
+
+      - name: Validate skill JSON files
+        run: |
+          python - <<'PY'
+          import glob, json, sys
+
+          files = sorted(glob.glob("agents/**/skills/*.json", recursive=True))
+          if not files:
+              print("No skill JSON files found — nothing to validate.")
+              sys.exit(0)
+
+          failures = []
+          for path in files:
+              try:
+                  with open(path, encoding="utf-8") as fh:
+                      json.load(fh)
+                  print(f"OK   {path}")
+              except (OSError, json.JSONDecodeError) as exc:
+                  print(f"FAIL {path}: {exc}")
+                  failures.append(path)
+
+          if failures:
+              print(f"\n{len(failures)} invalid skill JSON file(s).")
+              sys.exit(1)
+          print(f"\nAll {len(files)} skill JSON file(s) are valid.")
+          PY
