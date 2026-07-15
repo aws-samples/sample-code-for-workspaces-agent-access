@@ -63,6 +63,9 @@ python3 agents/generic_cua/agent.py --streaming-url "$STREAMING_URL"
 
 # Multi-agent — parallel validation (reads stack/fleet from config by default)
 python3 agents/multi_agent_validation/agent.py
+
+# MCP redirection — uses forwarded filesystem + fetch tools (requires a redirection fleet)
+python3 agents/mcp_redirection_demo/agent.py --streaming-url "$STREAMING_URL"
 ```
 
 ### MCP Redirection (forwarded tools)
@@ -76,6 +79,16 @@ To set up a fleet with custom MCP servers (requires ~30 min for AMI build + impo
 ```
 
 This builds a Windows Server 2025 image with Python + FastMCP and two example servers (`filesystem`, `fetch`), imports it to WorkSpaces, and creates a fleet with `FORWARD_MCP_TOOLS` enabled. See `mcp_servers/` for the server source code.
+
+Once the redirection fleet is running, `agents/mcp_redirection_demo/` drives the forwarded tools end to end — it lists and reads seeded files, fetches a web page, writes a report file, and confirms the result on the desktop:
+
+```bash
+STREAMING_URL=$(aws appstream create-streaming-url \
+  --stack-name MCPRedirectStack --fleet-name MCPRedirect \
+  --user-id test --validity 3600 \
+  --query StreamingURL --output text)
+python3 agents/mcp_redirection_demo/agent.py --streaming-url "$STREAMING_URL"
+```
 
 ### Domain Join (AD-joined fleets)
 
@@ -135,6 +148,7 @@ sample-code-for-workspaces-agent-access/
 │   ├── agent_creator/          # Interactive agent builder
 │   ├── application_validation/ # Single-app validation
 │   ├── generic_cua/            # Interactive REPL agent
+│   ├── mcp_redirection_demo/   # Forwarded MCP tools (filesystem + fetch) demo
 │   ├── multi_agent_validation/ # Parallel multi-session validation
 │   ├── paint_demo/             # MS Paint drawing demo
 │   └── pdf_extractor_demo/     # PDF → Writer extraction demo
@@ -156,6 +170,7 @@ sample-code-for-workspaces-agent-access/
 │   ├── deploy_agentcore_harness.sh  # Deploy via AgentCore Harness + Gateway + Memory (preview)
 │   ├── install.sh              # Install Python dependencies (macOS / Linux)
 │   ├── install.ps1             # Install Python dependencies (Windows)
+│   ├── ci_local.sh             # Run CI checks locally (compile + validate skill JSON)
 │   ├── package.sh              # Create distribution zip
 ├── skills/
 │   └── workspace-skill-creator/  # Skill for creating new app skills

@@ -1,0 +1,124 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "MCP Redirection - Computer Use Agent Skill",
+    "version": "1.0.0",
+    "description": "Instructions for a computer use agent to use forwarded MCP tools (filesystem + fetch) exposed by an Amazon WorkSpaces Applications fleet with MCP Redirection (FORWARD_MCP_TOOLS) enabled."
+  },
+  "servers": [
+    {
+      "url": "desktop://localhost",
+      "description": "Windows Desktop with forwarded MCP servers on the host"
+    }
+  ],
+  "paths": {
+    "/forwarded/discover": {
+      "post": {
+        "summary": "Find the forwarded tools in the tool list",
+        "operationId": "discoverForwardedTools",
+        "x-agent-instructions": {
+          "steps": [
+            "Inspect your available tools for names beginning with 'forwarded___'.",
+            "Match tools to a server by their described operation, not by exact spelling — separators may be normalized (dots become dashes for Bedrock)."
+          ],
+          "tips": [
+            "This fleet forwards two servers: 'filesystem' (read/write/list/move/info) and 'fetch' (URL retrieval).",
+            "If no 'forwarded___' tools exist, the stack is missing FORWARD_MCP_TOOLS or the image lacks the MCP servers — report it and stop."
+          ],
+          "verification": "You can name at least one forwarded filesystem tool and the forwarded fetch tool."
+        }
+      }
+    },
+    "/forwarded/filesystem/list": {
+      "post": {
+        "summary": "List a directory via the forwarded filesystem server",
+        "operationId": "listDirectory",
+        "x-agent-instructions": {
+          "steps": [
+            "Call the forwarded list-directory tool with path 'C:\\Users\\Public\\Documents'.",
+            "Read the returned entries directly from the tool result — no screenshot needed."
+          ],
+          "tips": [
+            "The server is sandboxed to C:\\Users\\Public\\Documents. Paths outside it return an error string.",
+            "Seeded files hello.txt and test.txt should appear."
+          ],
+          "verification": "The result lists directory entries with [FILE]/[DIR] prefixes."
+        }
+      }
+    },
+    "/forwarded/filesystem/read": {
+      "post": {
+        "summary": "Read a file via the forwarded filesystem server",
+        "operationId": "readFile",
+        "x-agent-instructions": {
+          "steps": [
+            "Call the forwarded read-file tool with the full path, e.g. 'C:\\Users\\Public\\Documents\\hello.txt'.",
+            "The file contents are returned as text in the tool result."
+          ],
+          "tips": [
+            "Prefer this over opening the file in an app and reading pixels — it is exact and cheap."
+          ],
+          "verification": "The tool result contains the file's text."
+        }
+      }
+    },
+    "/forwarded/filesystem/write": {
+      "post": {
+        "summary": "Write a file via the forwarded filesystem server",
+        "operationId": "writeFile",
+        "x-agent-instructions": {
+          "steps": [
+            "Call the forwarded write-file tool with 'path' and 'content' arguments.",
+            "Keep the path inside C:\\Users\\Public\\Documents.",
+            "Read the file back with the read-file tool to confirm."
+          ],
+          "tips": [
+            "The server creates parent directories if needed and returns a byte count on success."
+          ],
+          "verification": "A subsequent read-file returns the content you wrote."
+        }
+      }
+    },
+    "/forwarded/fetch": {
+      "post": {
+        "summary": "Fetch a URL via the forwarded fetch server",
+        "operationId": "fetchUrl",
+        "x-agent-instructions": {
+          "steps": [
+            "Call the forwarded fetch tool with a 'url' argument (e.g. 'https://example.com').",
+            "Optionally pass 'max_length' to cap the returned characters and 'start_index' to page through long content."
+          ],
+          "tips": [
+            "HTML is converted to plain text for you. Use 'raw: true' only if you need the unconverted body.",
+            "This tool calls out to the public internet from the host — the fleet must have outbound network access."
+          ],
+          "verification": "The result contains readable text extracted from the page (e.g. the 'Example Domain' heading)."
+        }
+      }
+    }
+  },
+  "x-agent-general-instructions": {
+    "applicationOverview": {
+      "name": "Forwarded MCP Tools",
+      "type": "MCP Redirection (FORWARD_MCP_TOOLS)",
+      "purpose": "Call MCP servers running on the WorkSpaces host (filesystem, fetch) as ordinary agent tools, alongside desktop interaction tools."
+    },
+    "windowLayout": "Not applicable — forwarded tools are headless API-style calls with structured arguments and text results. Desktop tools (screenshot/click/type) still control the visible screen.",
+    "interactionPatterns": [
+      "Use forwarded tools for file and web operations: pass structured arguments (path, content, url) and read the text result directly.",
+      "Use desktop tools only for visual confirmation or GUI-only tasks.",
+      "Do not screenshot to read a forwarded tool's output — it is returned inline."
+    ],
+    "keyboardShortcuts": {
+      "super+r": "Open Run dialog (to launch Notepad for visual confirmation)",
+      "Return": "Confirm/submit",
+      "Escape": "Dismiss an unexpected dialog",
+      "alt+F4": "Close a stuck window"
+    },
+    "errorRecovery": [
+      "'Path outside allowed directories' → move the path inside C:\\Users\\Public\\Documents and retry once.",
+      "No forwarded___ tools present → the fleet is not redirection-enabled; report and stop.",
+      "fetch errors (HTTP/URL) → the host may lack outbound internet; report the error string."
+    ]
+  }
+}
