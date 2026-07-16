@@ -1,11 +1,21 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
-"""Filesystem MCP server — Python equivalent of @modelcontextprotocol/server-filesystem."""
+"""Filesystem MCP server — Python equivalent of @modelcontextprotocol/server-filesystem.
+
+Allowed directories can be configured via command-line arguments:
+    python filesystem_server.py C:\\Users\\Public\\Documents D:\\Data
+
+If no arguments are provided, defaults to C:\\Users\\Public\\Documents.
+"""
 import os
+import sys
 from fastmcp import FastMCP
 
 mcp = FastMCP("filesystem")
-ALLOWED_DIRS = ["C:\\Users\\Public\\Documents"]
+
+# Allowed directories: from CLI args, or default.
+_DEFAULT_DIRS = ["C:\\Users\\Public\\Documents"]
+ALLOWED_DIRS = sys.argv[1:] if len(sys.argv) > 1 else _DEFAULT_DIRS
 
 
 def _validate(path):
@@ -33,8 +43,13 @@ def write_file(path: str, content: str) -> str:
 
 
 @mcp.tool
-def list_directory(path: str = "C:\\Users\\Public\\Documents") -> list:
-    """List directory contents with [FILE] or [DIR] prefix."""
+def list_directory(path: str = "") -> list:
+    """List directory contents with [FILE] or [DIR] prefix.
+
+    If no path is provided, lists the first allowed directory.
+    """
+    if not path:
+        path = ALLOWED_DIRS[0]
     full = _validate(path)
     entries = []
     for entry in os.scandir(full):
