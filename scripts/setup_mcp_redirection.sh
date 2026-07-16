@@ -16,15 +16,19 @@
 # Options:
 #   --mcp-endpoint URL         Agent Access MCP endpoint (default: prod)
 #   --region REGION            AWS region (default: us-east-1)
+#   --allowed-dirs DIRS        Comma-separated directories for the filesystem server
+#                              (default: C:\Users\Public\Documents)
 
 set -euo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
 MCP_ENDPOINT=""
+ALLOWED_DIRS="C:\\Users\\Public\\Documents"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --mcp-endpoint) MCP_ENDPOINT="$2"; shift 2;;
+    --allowed-dirs) ALLOWED_DIRS="$2"; shift 2;;
     --region) REGION="$2"; shift 2;;
     *) echo "Unknown option: $1"; exit 1;;
   esac
@@ -119,7 +123,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Base64 encode server files
 FS_B64=$(base64 -w0 "$SCRIPT_DIR/../mcp_servers/filesystem_server.py")
 FETCH_B64=$(base64 -w0 "$SCRIPT_DIR/../mcp_servers/fetch_server.py")
-MANIFEST='{"mcpServers":{"filesystem":{"command":"C:\\\\Program Files\\\\Python312\\\\python.exe","args":["C:\\\\McpServers\\\\filesystem_server.py"]},"fetch":{"command":"C:\\\\Program Files\\\\Python312\\\\python.exe","args":["C:\\\\McpServers\\\\fetch_server.py"]}}}'
+
+# Build filesystem server args: script path + allowed directories
+# Use forward slashes — cleaner in JSON and Python handles them natively on Windows.
+IFS=',' read -ra DIRS_ARRAY <<< "$ALLOWED_DIRS"
+FS_ARGS="[\"C:/McpServers/filesystem_server.py\""
+for dir in "${DIRS_ARRAY[@]}"; do
+  # Convert backslashes to forward slashes for clean JSON
+  cleaned=$(echo "$dir" | sed 's/\\/\//g')
+  FS_ARGS="$FS_ARGS,\"$cleaned\""
+done
+FS_ARGS="$FS_ARGS]"
+
+MANIFEST="{\"mcpServers\":{\"filesystem\":{\"command\":\"C:/Program Files/Python312/python.exe\",\"args\":$FS_ARGS},\"fetch\":{\"command\":\"C:/Program Files/Python312/python.exe\",\"args\":[\"C:/McpServers/fetch_server.py\"]}}}"
 MANIFEST_B64=$(echo -n "$MANIFEST" | base64 -w0)
 
 CMD_ID=$(aws ssm send-command --region "$REGION" \
