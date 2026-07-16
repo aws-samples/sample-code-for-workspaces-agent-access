@@ -6,6 +6,6 @@
 #
 strands-agents[openai]==1.36.0
 boto3==1.42.93
-mcp==1.27.0          # pinned; must be >= 1.23.0 to fix CVE-2025-66416, -53365, -53366
+mcp==1.28.1          # pinned; must be >= 1.23.0 to fix CVE-2025-66416, -53365, -53366
 mcp-proxy-for-aws>=1.6.1
 aws-bedrock-token-generator  # auto-generates short-term Bedrock API keys from AWS creds
