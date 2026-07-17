@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
-# MCP Redirection Fleet Setup Script
+# MCP Tool Forwarding Fleet Setup Script
 # Builds a Windows Server 2025 AMI with MCP servers, imports to AppStream,
 # and creates a fleet + stack with FORWARD_MCP_TOOLS enabled.
 #
@@ -11,7 +11,7 @@
 #   - IAM roles: MCP-ImageBuild-Profile, AppStreamImageImportRole
 #
 # Usage:
-#   ./scripts/setup_mcp_redirection.sh [OPTIONS]
+#   ./scripts/setup_mcp_forwarding.sh [OPTIONS]
 #
 # Options:
 #   --mcp-endpoint URL         Agent Access MCP endpoint (default: prod)
@@ -37,11 +37,11 @@ done
 MCP_ENDPOINT="${MCP_ENDPOINT:-https://agentaccess-mcp.${REGION}.api.aws/mcp}"
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
-IMAGE_NAME="mcp-redirection-$(date +%Y%m%d-%H%M)"
-FLEET_NAME="MCPRedirect"
-STACK_NAME="MCPRedirectStack"
+IMAGE_NAME="mcp-forwarding-$(date +%Y%m%d-%H%M)"
+FLEET_NAME="MCPForwarding"
+STACK_NAME="MCPForwardingStack"
 
-echo "=== MCP Redirection Setup ==="
+echo "=== MCP Tool Forwarding Setup ==="
 echo "Account: $ACCOUNT_ID"
 echo "Region: $REGION"
 echo "MCP endpoint: $MCP_ENDPOINT"

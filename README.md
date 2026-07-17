@@ -64,32 +64,32 @@ python3 agents/generic_cua/agent.py --streaming-url "$STREAMING_URL"
 # Multi-agent — parallel validation (reads stack/fleet from config by default)
 python3 agents/multi_agent_validation/agent.py
 
-# MCP redirection — uses forwarded filesystem + fetch tools (requires a redirection fleet)
-python3 agents/mcp_redirection_demo/agent.py --streaming-url "$STREAMING_URL"
+# MCP tool forwarding — uses forwarded filesystem + fetch tools (requires a forwarding fleet)
+python3 agents/mcp_forwarding_demo/agent.py --streaming-url "$STREAMING_URL"
 ```
 
-### MCP Redirection (forwarded tools)
+### MCP tool forwarding
 
-Fleets can expose additional tools beyond desktop interaction via MCP Redirection. When enabled, `tools/list` returns both desktop tools (`screenshot`, `left_click`, etc.) and forwarded tools (prefixed with `forwarded___`). These forwarded tools call external APIs or services configured on the fleet — your agent uses them like any other MCP tool.
+Fleets can expose additional tools beyond desktop interaction via MCP tool forwarding. When enabled, `tools/list` returns both desktop tools (`screenshot`, `left_click`, etc.) and forwarded tools (prefixed with `forwarded___`). These forwarded tools call external APIs or services configured on the fleet — your agent uses them like any other MCP tool.
 
 To set up a fleet with custom MCP servers (requires ~30 min for AMI build + import):
 
 ```bash
-./scripts/setup_mcp_redirection.sh --region us-east-1
+./scripts/setup_mcp_forwarding.sh --region us-east-1
 ```
 
 This builds a Windows Server 2025 image with Python + FastMCP and two example servers (`filesystem`, `fetch`), imports it to WorkSpaces, and creates a fleet with `FORWARD_MCP_TOOLS` enabled. See `mcp_servers/` for the server source code.
 
 > **Validate first:** before building a custom image, check that your MCP servers will forward correctly with the compatibility tester in [`utils/mcpforwardingtester/`](utils/mcpforwardingtester/). It catches the common failures (a server that lists no tools, a config saved with a BOM, or `env`/`cwd` keys that get silently ignored) before the ~30-minute image build.
 
-Once the redirection fleet is running, `agents/mcp_redirection_demo/` drives the forwarded tools end to end — it lists and reads seeded files, fetches a web page, writes a report file, and confirms the result on the desktop:
+Once the forwarding fleet is running, `agents/mcp_forwarding_demo/` drives the forwarded tools end to end — it lists and reads seeded files, fetches a web page, writes a report file, and confirms the result on the desktop:
 
 ```bash
 STREAMING_URL=$(aws appstream create-streaming-url \
-  --stack-name MCPRedirectStack --fleet-name MCPRedirect \
+  --stack-name MCPForwardingStack --fleet-name MCPForwarding \
   --user-id test --validity 3600 \
   --query StreamingURL --output text)
-python3 agents/mcp_redirection_demo/agent.py --streaming-url "$STREAMING_URL"
+python3 agents/mcp_forwarding_demo/agent.py --streaming-url "$STREAMING_URL"
 ```
 
 ### Domain Join (AD-joined fleets)
@@ -150,7 +150,7 @@ sample-code-for-workspaces-agent-access/
 │   ├── agent_creator/          # Interactive agent builder
 │   ├── application_validation/ # Single-app validation
 │   ├── generic_cua/            # Interactive REPL agent
-│   ├── mcp_redirection_demo/   # Forwarded MCP tools (filesystem + fetch) demo
+│   ├── mcp_forwarding_demo/   # Forwarded MCP tools (filesystem + fetch) demo
 │   ├── multi_agent_validation/ # Parallel multi-session validation
 │   ├── paint_demo/             # MS Paint drawing demo
 │   └── pdf_extractor_demo/     # PDF → Writer extraction demo

@@ -277,7 +277,7 @@ specific CI matrix version.
 
 > This gate intentionally does **not** install dependencies or run the agents —
 > it catches syntax errors and malformed skill files, not runtime behavior.
-> Full behavioral testing requires a live redirection/desktop fleet.
+> Full behavioral testing requires a live forwarding/desktop fleet.
 
 ### Adding a new demo agent
 
@@ -285,5 +285,5 @@ A demo agent is a thin `agent.py` that calls `agent_common.run_standard_agent`,
 plus a `prompts/` directory (`system_prompt.md`, `task_prompt.md`) and an
 optional `skills/<name>.json`. Copy an existing agent (e.g. `agents/paint_demo`)
 as a starting point, then run `./scripts/ci_local.sh` to confirm it compiles and
-its skill JSON is valid. See `agents/mcp_redirection_demo` for an example that
+its skill JSON is valid. See `agents/mcp_forwarding_demo` for an example that
 drives forwarded MCP tools.
