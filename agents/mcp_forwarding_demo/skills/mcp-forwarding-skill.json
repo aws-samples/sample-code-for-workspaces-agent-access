@@ -1,9 +1,9 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "MCP Redirection - Computer Use Agent Skill",
+    "title": "MCP Tool Forwarding - Computer Use Agent Skill",
     "version": "1.0.0",
-    "description": "Instructions for a computer use agent to use forwarded MCP tools (filesystem + fetch) exposed by an Amazon WorkSpaces Applications fleet with MCP Redirection (FORWARD_MCP_TOOLS) enabled."
+    "description": "Instructions for a computer use agent to use forwarded MCP tools (filesystem + fetch) exposed by an Amazon WorkSpaces Applications fleet with MCP tool forwarding (FORWARD_MCP_TOOLS) enabled."
   },
   "servers": [
     {
@@ -100,7 +100,7 @@
   "x-agent-general-instructions": {
     "applicationOverview": {
       "name": "Forwarded MCP Tools",
-      "type": "MCP Redirection (FORWARD_MCP_TOOLS)",
+      "type": "MCP tool forwarding (FORWARD_MCP_TOOLS)",
       "purpose": "Call MCP servers running on the WorkSpaces host (filesystem, fetch) as ordinary agent tools, alongside desktop interaction tools."
     },
     "windowLayout": "Not applicable — forwarded tools are headless API-style calls with structured arguments and text results. Desktop tools (screenshot/click/type) still control the visible screen.",
@@ -117,7 +117,7 @@
     },
     "errorRecovery": [
       "'Path outside allowed directories' → move the path inside C:\\Users\\Public\\Documents and retry once.",
-      "No forwarded___ tools present → the fleet is not redirection-enabled; report and stop.",
+      "No forwarded___ tools present → the fleet is not forwarding-enabled; report and stop.",
       "fetch errors (HTTP/URL) → the host may lack outbound internet; report the error string."
     ]
   }

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
-"""MCP Redirection Demo Agent - Drives forwarded MCP tools on a remote desktop.
+"""MCP Tool Forwarding Demo Agent - Drives forwarded MCP tools on a remote desktop.
 
-Requires a fleet built with scripts/setup_mcp_redirection.sh (FORWARD_MCP_TOOLS
+Requires a fleet built with scripts/setup_mcp_forwarding.sh (FORWARD_MCP_TOOLS
 enabled), which installs the example `filesystem` and `fetch` MCP servers on the
 Windows host. Those servers' tools appear to the agent as forwarded tools
 (prefixed with `forwarded___`) alongside the usual desktop tools.
@@ -20,16 +20,16 @@ from lib import agent_common
 def main():
     return agent_common.run_standard_agent(
         agent_dir=os.path.dirname(os.path.abspath(__file__)),
-        description='MCP Redirection Demo Agent (Strands)',
-        banner_title="MCP Redirection Demo Agent",
+        description='MCP Tool Forwarding Demo Agent (Strands)',
+        banner_title="MCP Tool Forwarding Demo Agent",
         banner_body=(
             "The agent exercises forwarded MCP tools\n"
             "(filesystem + fetch) running on a remote\n"
             "Windows desktop, then verifies the result\n"
             "on the desktop itself."
         ),
-        skill_filename="mcp-redirection-skill.json",
-        skill_label="MCP REDIRECTION SKILL",
+        skill_filename="mcp-forwarding-skill.json",
+        skill_label="MCP FORWARDING SKILL",
     )
 
 

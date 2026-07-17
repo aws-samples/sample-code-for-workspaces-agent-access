@@ -1,12 +1,12 @@
 ---
 version: "1.0.0"
-description: "Task prompt for the MCP Redirection demo - exercise forwarded filesystem + fetch tools"
+description: "Task prompt for the MCP tool forwarding demo - exercise forwarded filesystem + fetch tools"
 last_updated: "2026-07-13"
 ---
 
 # Task: Exercise Forwarded MCP Tools (filesystem + fetch)
 
-This fleet has **MCP Redirection** enabled. Your tool list therefore contains
+This fleet has **MCP tool forwarding** enabled. Your tool list therefore contains
 forwarded tools (prefixed with `forwarded___`) from two servers running on the
 Windows host: a **filesystem** server and a **fetch** server.
 
@@ -15,7 +15,7 @@ result on the desktop. Do the steps in order. Do **not** open apps to read or
 write files — use the forwarded filesystem tools directly.
 
 The filesystem server is sandboxed to `C:\Users\Public\Documents`. Keep all
-paths inside it. The `setup_mcp_redirection.sh` script seeds `hello.txt` and
+paths inside it. The `setup_mcp_forwarding.sh` script seeds `hello.txt` and
 `test.txt` there.
 
 ---
@@ -25,7 +25,7 @@ paths inside it. The `setup_mcp_redirection.sh` script seeds `hello.txt` and
 Look at your available tools and identify the ones prefixed with `forwarded___`.
 State which forwarded tools you found and which server (filesystem or fetch)
 each belongs to. If there are **no** `forwarded___` tools, stop and report that
-MCP Redirection is not active on this fleet (the stack needs
+MCP tool forwarding is not active on this fleet (the stack needs
 `FORWARD_MCP_TOOLS: ENABLED` and the image must include the MCP servers).
 
 ---
@@ -53,14 +53,14 @@ MCP Redirection is not active on this fleet (the stack needs
 Combine what you gathered and write a new file with the forwarded
 **write-file** tool:
 
-- Path: `C:\Users\Public\Documents\mcp_redirection_report.txt`
+- Path: `C:\Users\Public\Documents\mcp_forwarding_report.txt`
 - Content: a short plain-text report containing
   1. the directory listing from Step 2,
   2. the contents of `hello.txt`,
   3. the title/first line fetched from `example.com` in Step 3.
 
 Then call the forwarded **read-file** tool on
-`C:\Users\Public\Documents\mcp_redirection_report.txt` and confirm it was
+`C:\Users\Public\Documents\mcp_forwarding_report.txt` and confirm it was
 written correctly.
 
 ---
@@ -69,7 +69,7 @@ written correctly.
 
 Show that the forwarded write is visible to the desktop itself:
 
-1. Open the file in Notepad: `key("super+r")`, `type_text("notepad C:\\Users\\Public\\Documents\\mcp_redirection_report.txt")`, `key("Return")`.
+1. Open the file in Notepad: `key("super+r")`, `type_text("notepad C:\\Users\\Public\\Documents\\mcp_forwarding_report.txt")`, `key("Return")`.
 2. Take **one** `screenshot` to confirm the report is on screen.
 3. If a dialog blocks you, `key("Escape")` and continue — this step is
    best-effort confirmation, not the core of the task.
