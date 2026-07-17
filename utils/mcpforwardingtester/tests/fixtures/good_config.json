@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "/usr/local/bin/mcp-server-filesystem",
+      "args": ["--root", "/home/appuser"]
+    },
+    "weather": {
+      "command": "/opt/mcp/weather"
+    }
+  }
+}

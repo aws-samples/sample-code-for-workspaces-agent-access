@@ -80,6 +80,8 @@ To set up a fleet with custom MCP servers (requires ~30 min for AMI build + impo
 
 This builds a Windows Server 2025 image with Python + FastMCP and two example servers (`filesystem`, `fetch`), imports it to WorkSpaces, and creates a fleet with `FORWARD_MCP_TOOLS` enabled. See `mcp_servers/` for the server source code.
 
+> **Validate first:** before building a custom image, check that your MCP servers will forward correctly with the compatibility tester in [`utils/mcpforwardingtester/`](utils/mcpforwardingtester/). It catches the common failures (a server that lists no tools, a config saved with a BOM, or `env`/`cwd` keys that get silently ignored) before the ~30-minute image build.
+
 Once the redirection fleet is running, `agents/mcp_redirection_demo/` drives the forwarded tools end to end — it lists and reads seeded files, fetches a web page, writes a report file, and confirms the result on the desktop:
 
 ```bash
@@ -174,6 +176,8 @@ sample-code-for-workspaces-agent-access/
 │   ├── package.sh              # Create distribution zip
 ├── skills/
 │   └── workspace-skill-creator/  # Skill for creating new app skills
+├── utils/
+│   └── mcpforwardingtester/      # Validate MCP servers forward correctly before building an image
 └── requirements.txt
 ```
 

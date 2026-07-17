@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-forwarding-tester"
+version = "0.1.0"
+description = "Test whether an MCP server is compatible with MCP tool forwarding on Amazon WorkSpaces Applications"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT-0"}
+dependencies = ["mcp>=1.9,<2"]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+mcp-forwarding-test = "mcp_forwarding_tester.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
