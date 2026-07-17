@@ -4,7 +4,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+build/
 dist/
+.pytest_cache/
 
 # Agent outputs - ignore contents but keep folders
 agents/*/logs/*

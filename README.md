@@ -150,7 +150,7 @@ sample-code-for-workspaces-agent-access/
 │   ├── agent_creator/          # Interactive agent builder
 │   ├── application_validation/ # Single-app validation
 │   ├── generic_cua/            # Interactive REPL agent
-│   ├── mcp_forwarding_demo/   # Forwarded MCP tools (filesystem + fetch) demo
+│   ├── mcp_forwarding_demo/    # Forwarded MCP tools (filesystem + fetch) demo
 │   ├── multi_agent_validation/ # Parallel multi-session validation
 │   ├── paint_demo/             # MS Paint drawing demo
 │   └── pdf_extractor_demo/     # PDF → Writer extraction demo
