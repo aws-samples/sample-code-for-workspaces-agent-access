@@ -121,8 +121,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Base64 encode server files
 # Base64 encode server files
-FS_B64=$(base64 -w0 "$SCRIPT_DIR/../mcp_servers/filesystem_server.py")
-FETCH_B64=$(base64 -w0 "$SCRIPT_DIR/../mcp_servers/fetch_server.py")
+FS_B64=$(base64 < "$SCRIPT_DIR/../mcp_servers/filesystem_server.py" | tr -d '\n')
+FETCH_B64=$(base64 < "$SCRIPT_DIR/../mcp_servers/fetch_server.py" | tr -d '\n')
 
 # Build filesystem server args: script path + allowed directories
 # Use forward slashes — cleaner in JSON and Python handles them natively on Windows.
@@ -136,7 +136,7 @@ done
 FS_ARGS="$FS_ARGS]"
 
 MANIFEST="{\"mcpServers\":{\"filesystem\":{\"command\":\"C:/Program Files/Python312/python.exe\",\"args\":$FS_ARGS},\"fetch\":{\"command\":\"C:/Program Files/Python312/python.exe\",\"args\":[\"C:/McpServers/fetch_server.py\"]}}}"
-MANIFEST_B64=$(echo -n "$MANIFEST" | base64 -w0)
+MANIFEST_B64=$(echo -n "$MANIFEST" | base64 | tr -d '\n')
 
 CMD_ID=$(aws ssm send-command --region "$REGION" \
   --instance-ids "$INSTANCE_ID" \
@@ -150,8 +150,43 @@ for i in $(seq 1 10); do
   if [ "$STATUS" = "Failed" ]; then echo "  FAILED!"; exit 1; fi
 done
 
-# ─── Step 7: Stop instance + create AMI ───
-echo "Step 7: Creating AMI..."
+# ─── Step 7: Validate MCP servers before building the image ───
+# Push the compatibility tester to the build instance and run it against the manifest
+# just written. If any configured server would fail to forward, abort here, before the
+# ~25 minutes of AMI creation and import.
+echo "Step 7: Validating MCP servers before building the image..."
+TESTER_TMP="$(mktemp -d)"
+( cd "$SCRIPT_DIR/../utils/mcpforwardingtester" && zip -rq "$TESTER_TMP/tester.zip" . -x '*__pycache__*' '*.pyc' '*.egg-info*' )
+TESTER_B64=$(base64 < "$TESTER_TMP/tester.zip" | tr -d '\n')
+rm -rf "$TESTER_TMP"
+
+VAL_CMD_ID=$(aws ssm send-command --region "$REGION" \
+  --instance-ids "$INSTANCE_ID" \
+  --document-name "AWS-RunPowerShellScript" \
+  --parameters commands="[\"[System.IO.File]::WriteAllBytes('C:\\\\tester.zip', [System.Convert]::FromBase64String('$TESTER_B64'))\",\"Expand-Archive -Path 'C:\\\\tester.zip' -DestinationPath 'C:\\\\tester' -Force\",\"& 'C:\\\\Program Files\\\\Python312\\\\python.exe' -m pip install --quiet 'C:\\\\tester'\",\"& 'C:\\\\Program Files\\\\Python312\\\\python.exe' -m mcp_forwarding_tester config\",\"exit \$LASTEXITCODE\"]" \
+  --query 'Command.CommandId' --output text)
+
+VAL_STATUS="Pending"
+for i in $(seq 1 30); do
+  sleep 10
+  VAL_STATUS=$(aws ssm get-command-invocation --region "$REGION" --command-id "$VAL_CMD_ID" --instance-id "$INSTANCE_ID" --query 'Status' --output text 2>/dev/null || echo "Pending")
+  if [ "$VAL_STATUS" = "Success" ] || [ "$VAL_STATUS" = "Failed" ]; then break; fi
+done
+
+echo "  --- compatibility report ---"
+aws ssm get-command-invocation --region "$REGION" --command-id "$VAL_CMD_ID" --instance-id "$INSTANCE_ID" --query 'StandardOutputContent' --output text 2>/dev/null | sed 's/^/  /' || true
+echo "  ----------------------------"
+
+if [ "$VAL_STATUS" != "Success" ]; then
+  echo "  VALIDATION FAILED: the configured MCP servers would not forward correctly."
+  echo "  Aborting before image creation. Fix the servers or manifest and re-run."
+  aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "$REGION" --output text > /dev/null 2>&1 || true
+  exit 1
+fi
+echo "  Validation passed."
+
+# ─── Step 8: Stop instance + create AMI ───
+echo "Step 8: Creating AMI..."
 aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region "$REGION" --output text > /dev/null
 aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID" --region "$REGION"
 AMI_ID=$(aws ec2 create-image --instance-id "$INSTANCE_ID" \
@@ -161,12 +196,12 @@ echo "  Waiting for AMI (this takes ~5 min)..."
 aws ec2 wait image-available --image-ids "$AMI_ID" --region "$REGION"
 echo "  AMI available."
 
-# ─── Step 8: Terminate build instance ───
+# ─── Step 9: Terminate build instance ───
 aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "$REGION" --output text > /dev/null
 echo "  Build instance terminated."
 
-# ─── Step 9: Import to AppStream ───
-echo "Step 9: Importing to AppStream with ALWAYS_LATEST..."
+# ─── Step 10: Import to AppStream ───
+echo "Step 10: Importing to AppStream with ALWAYS_LATEST..."
 aws appstream create-imported-image \
   --name "$IMAGE_NAME" \
   --source-ami-id "$AMI_ID" \
@@ -184,8 +219,8 @@ while true; do
   sleep 60
 done
 
-# ─── Step 10: Create fleet + stack ───
-echo "Step 10: Creating fleet and stack..."
+# ─── Step 11: Create fleet + stack ───
+echo "Step 11: Creating fleet and stack..."
 
 # Create or update fleet
 FLEET_EXISTS=$(aws appstream describe-fleets --names "$FLEET_NAME" --region "$REGION" --query 'Fleets[0].Name' --output text 2>/dev/null || echo "")
