@@ -15,13 +15,9 @@ Agent Access lets AI agents interact with Windows desktop applications running o
 └─────────────┘     └──────────────────┘     └──────────────────┘     └─────────────────┘
 ```
 
-### Connection Methods
+### Connection Method
 
-| Method | Auth | Use Case |
-|--------|------|----------|
-| Direct (SigV4) | `mcp-proxy-for-aws` signs each request | SDK integrations, custom agents |
-| AgentCore Gateway | Gateway signs on your behalf | AgentCore Harness, managed deployments |
-| AgentCore Harness | Fully managed orchestration | Zero-code agents via console/CLI |
+Agents connect directly to the MCP endpoint over Streamable HTTP, with `mcp-proxy-for-aws` SigV4-signing each request. Every sample in this repo uses this path.
 
 ### Endpoint
 
@@ -58,8 +54,6 @@ Each MCP session is bound to a desktop via a streaming URL (from `appstream:Crea
 ```
 X-Amzn-AgentAccess-Streaming-Session-Url: <streaming-url>
 ```
-
-When connecting through an AgentCore Gateway with `IamCredentialProvider`, the MCP server auto-provisions sessions — no streaming URL management needed.
 
 ## Available MCP Tools
 
@@ -154,31 +148,7 @@ agent = Agent(model=model, tools=[mcp_client])
 agent("Open Notepad and type 'Hello World'")
 ```
 
-### Pattern 2: AgentCore Harness (Zero Code)
-
-```bash
-# Deploy Gateway + Lambda Proxy + Harness
-./scripts/deploy_agentcore_harness.sh --region us-east-1
-
-# Use via Console Playground or agentcore dev
-```
-
-**Architecture:** The harness uses a Lambda proxy target because the AgentCore Gateway cannot connect directly to the Agent Access MCP server (the MCP server requires a streaming URL for any connection, including health checks). The Lambda handles streaming URL lifecycle, session initialization, and tool call forwarding.
-
-```
-Harness → Gateway → Lambda Proxy → (SigV4) → Agent Access MCP Server → Desktop
-```
-
-**Key implementation details:**
-- The Lambda creates/caches streaming URLs from AppStream (`CreateStreamingURL`)
-- On first invocation, it initializes the MCP session and polls `tools/list` until DCV tools are ready (up to 60s)
-- Tool names are prefixed with `agentaccess___` by the MCP server — the Lambda strips this on input and adds it on output
-- The Lambda timeout is 180s to accommodate DCV session warmup on cold starts
-
-**Known limitations:**
-- First tool call after a cold start takes 10-30s while the desktop session connects
-
-### Pattern 3: IDE MCP Server Configuration
+### Pattern 2: IDE MCP Server Configuration
 
 Any IDE that supports MCP servers via stdio can connect using `mcp-proxy-for-aws`:
 
@@ -221,7 +191,7 @@ Optional flags:
 
 ## Session Lifecycle
 
-1. **Session starts** when the first MCP `initialize` request is received with a streaming URL (or auto-provisioned via Gateway).
+1. **Session starts** when the first MCP `initialize` request is received with a streaming URL.
 2. **Session is active** while the MCP connection is open. Tools can be called repeatedly.
 3. **Session ends** when the MCP connection closes or the streaming URL expires (default: 1 hour, max: 16 hours).
 4. **Desktop state persists** within a session — applications stay open, files remain on disk.
@@ -232,7 +202,7 @@ Optional flags:
 |-------|-------|-----|
 | `401 Unauthorized` | SigV4 signing failed | Check AWS credentials |
 | `403 Forbidden` | Missing IAM permissions | Add `agentaccess-mcp:*` to policy |
-| `DCV proxy not initialized` | No streaming URL provided | Pass streaming URL header or use Gateway |
+| `DCV proxy not initialized` | No streaming URL provided | Pass the streaming URL header |
 | `dcv session not ready` | Desktop still booting | Retry — agent retries automatically for up to 10 minutes |
 | `backend unavailable` | Transient service issue | Retry (auto-retried 10 times) |
 
@@ -247,11 +217,11 @@ pip install strands-agents mcp-proxy-for-aws boto3
 
 ### Tool Name Prefixing
 
-The MCP server prefixes all tool names with `agentaccess___` (e.g., `agentaccess___screenshot`, `agentaccess___left_click`). When using the Lambda proxy, tool names are automatically mapped. When connecting directly, use the unprefixed names — the `mcp-proxy-for-aws` transport handles the prefix transparently.
+The MCP server prefixes all tool names with `agentaccess___` (e.g., `agentaccess___screenshot`, `agentaccess___left_click`). Use the unprefixed names — the `mcp-proxy-for-aws` transport handles the prefix transparently.
 
 ### DCV Session Warmup
 
-After creating a streaming URL, the DCV desktop session takes 5-30 seconds to connect. During this time, `tools/call` returns `"Unknown tool"` errors. The Lambda proxy handles this by polling `tools/list` until tools appear. For custom agents, implement retry logic or use `lib/agent_common.py` which retries MCP connection automatically.
+After creating a streaming URL, the DCV desktop session takes 5-30 seconds to connect. During this time, `tools/call` returns `"Unknown tool"` errors. Implement retry logic in your agent, or use `lib/agent_common.py`, which retries the MCP connection automatically.
 
 ## Contributing
 
