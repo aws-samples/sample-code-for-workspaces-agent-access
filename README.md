@@ -169,7 +169,6 @@ sample-code-for-workspaces-agent-access/
 │   ├── deploy.sh               # Deploy VPC + Fleet + Stack
 │   ├── cleanup.sh              # Tear down all resources
 │   ├── deploy_agentcore.sh     # Deploy agent to Bedrock AgentCore Runtime
-│   ├── deploy_agentcore_harness.sh  # Deploy via AgentCore Harness + Gateway + Memory (preview)
 │   ├── install.sh              # Install Python dependencies (macOS / Linux)
 │   ├── install.ps1             # Install Python dependencies (Windows)
 │   ├── ci_local.sh             # Run CI checks locally (compile + validate skill JSON)
@@ -274,35 +273,6 @@ The AgentCore handler accepts `streaming_url` directly from the invocation paylo
 - No resource-based policies that grant broad cross-account invoke access.
 
 For production multi-tenant deployments, add a signed-grant flow: the caller passes an opaque `session_id`, the handler resolves it against a DynamoDB table that records the issuing principal, and rejects cross-principal lookups.
-
-## Appendix: Deploy with AgentCore Harness (Preview)
-
-The [AgentCore Harness](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/harness.html) provides managed agent orchestration — no custom agent code required. The deploy script creates an AgentCore Gateway that SigV4-signs requests to the MCP endpoint, then deploys a harness with [persistent memory](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/harness-memory.html) (semantic + summarization) that uses it.
-
-```bash
-# Deploy (creates Gateway + Harness)
-./scripts/deploy_agentcore_harness.sh
-```
-
-Prerequisites: Node.js 20+, `agentcore` CLI preview channel (`npm install -g @aws/agentcore@preview`), Python 3.10+ with `boto3`.
-
-### Run the agent
-
-Use the [AgentCore Harness Playground](https://us-east-1.console.aws.amazon.com/bedrock-agentcore/harnesses/playground) in the AWS Console — select your harness and start chatting. No local setup needed.
-
-Or run locally:
-
-```bash
-# Navigate to the project
-cd .agentcore-build/WSAgentHarness
-agentcore dev
-```
-
-### Cleanup
-
-```bash
-./scripts/deploy_agentcore_harness.sh --cleanup
-```
 
 ## Appendix: Integrate Into Your Own Agent
 
