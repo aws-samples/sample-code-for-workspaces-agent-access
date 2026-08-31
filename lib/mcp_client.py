@@ -93,8 +93,8 @@ def create_mcp_client_factory(args, root_dir=None):
         sys.stdout.flush()
 
         meta_values = {
-            "aws.agentaccess/workspacesApplicationsSamlAssertion": saml_assertion,
-            "aws.agentaccess/workspacesApplicationsStackArn": stack_arn,
+            "saml_response": saml_assertion,
+            "stack_arn": stack_arn,
         }
 
         def factory():
