@@ -23,6 +23,8 @@ from .screenshot_pruning_manager import ScreenshotPruningConversationManager
 # Re-exports from sub-modules
 from .model import ALLOWED_REGIONS, _supports_converse_images, create_model
 from .mcp_client import (
+    _config,
+    _is_remote_mcp,
     DEFAULT_MCP_ENDPOINT,
     DEFAULT_MCP_REGION_OVERRIDE,
     DEFAULT_MCP_SERVICE,
