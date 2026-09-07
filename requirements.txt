@@ -28,6 +28,8 @@ aws-bedrock-token-generator==1.1.0
     # via -r requirements.in
 awscrt==0.31.2
     # via botocore
+backports-tarfile==1.2.0
+    # via jaraco-context
 beartype==0.22.9
     # via py-key-value-aio
 boto3==1.42.93
@@ -54,7 +56,7 @@ cffi==2.0.0
     # via cryptography
 click==8.3.3
     # via uvicorn
-cryptography==48.0.1
+cryptography==50.0.0
     # via
     #   authlib
     #   joserfc
@@ -75,7 +77,9 @@ docutils==0.22.4
 email-validator==2.3.0
     # via pydantic
 exceptiongroup==1.3.1
-    # via fastmcp
+    # via
+    #   anyio
+    #   fastmcp
 fastmcp==3.2.4
     # via mcp-proxy-for-aws
 griffelib==2.0.2
@@ -99,7 +103,9 @@ idna==3.15
     #   email-validator
     #   httpx
 importlib-metadata==8.7.1
-    # via opentelemetry-api
+    # via
+    #   keyring
+    #   opentelemetry-api
 jaraco-classes==3.4.0
     # via keyring
 jaraco-context==6.1.2
@@ -242,11 +248,15 @@ starlette==1.3.1
     #   sse-starlette
 strands-agents[openai]==1.36.0
     # via -r requirements.in
+tomli==2.4.1
+    # via cyclopts
 tqdm==4.67.3
     # via openai
 typing-extensions==4.15.0
     # via
     #   anyio
+    #   cryptography
+    #   cyclopts
     #   exceptiongroup
     #   mcp
     #   openai
@@ -256,10 +266,12 @@ typing-extensions==4.15.0
     #   py-key-value-aio
     #   pydantic
     #   pydantic-core
+    #   pyjwt
     #   referencing
     #   starlette
     #   strands-agents
     #   typing-inspection
+    #   uvicorn
 typing-inspection==0.4.2
     # via
     #   mcp
@@ -285,16 +297,3 @@ wrapt==2.1.2
     #   opentelemetry-instrumentation-threading
 zipp==3.23.1
     # via importlib-metadata
-
-# --- Platform-gated dependencies ---------------------------------------------
-# The entries below are transitive deps that pip resolves only on certain
-# platforms. pip-compile on Linux doesn't record them, so we add them by hand.
-# Safe to skip if you regenerate on Windows (pip-compile will pick them up).
-backports-tarfile==1.2.0 ; python_version < "3.12"
-    # via jaraco-context
-colorama==0.4.6 ; sys_platform == "win32"
-    # via click
-pywin32==311 ; sys_platform == "win32"
-    # via mcp
-pywin32-ctypes==0.2.3 ; sys_platform == "win32"
-    # via keyring
