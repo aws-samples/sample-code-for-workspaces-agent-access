@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 # Python
 venv/
 __pycache__/
@@ -18,3 +21,8 @@ agents/*/screenshots/*
 reports/*
 !reports/.gitkeep
 .agentcore-build/
+
+# Secrets - a SAML assertion is a bearer token; never commit one
+assertion*.b64
+*.saml
+*.saml.b64

@@ -1,11 +1,18 @@
-# Source requirements for pip-compile. This is the canonical list of top-level
-# dependencies. Regenerate the version-pinned requirements.txt with:
+# Source requirements. This is the canonical list of top-level dependencies.
+# Regenerate the version-pinned requirements.txt with uv (https://docs.astral.sh/uv/):
 #
-#   pip install pip-tools
-#   pip-compile --output-file=requirements.txt requirements.in
+#   uv pip compile --universal --python-version 3.10 requirements.in --output-file=requirements.txt
 #
-strands-agents[openai]==1.36.0
+# --universal records the dependencies of every platform and Python version, each with its
+# marker (pywin32 on Windows, backports-tarfile below Python 3.12, ...); pip-compile only
+# records the machine it runs on. Dependabot regenerates the file with the same command
+# (see .github/dependabot.yml). The result installs with plain pip.
+#
+# strands-agents[openai] also installs aws-bedrock-token-generator, which Strands'
+# bedrock_mantle_config uses to mint short-term Bedrock keys for non-Claude models.
+strands-agents[openai]==1.57.1
 boto3==1.42.93
-mcp==1.27.0          # pinned; must be >= 1.23.0 to fix CVE-2025-66416, -53365, -53366
-mcp-proxy-for-aws>=1.6.1
-aws-bedrock-token-generator  # auto-generates short-term Bedrock API keys from AWS creds
+mcp>=1.27,<2          # >= 1.23.0 fixes CVE-2025-66416, -53365, -53366. Keep < 2: mcp-proxy-for-aws caps fastmcp<3.5 (which caps mcp<2) and lib/ relies on mcp 1.x types
+mcp-proxy-for-aws==1.7.0  # exact pin: upstream is moving to fastmcp 4 / mcp 2, which changes the transport API that lib/mcp_client.py relies on
+rich>=13,<16              # generic_cua's interactive terminal (already installed by fastmcp)
+prompt_toolkit>=3.0.40,<4 # generic_cua's interactive input: history, multi-line, Ctrl-C handling
