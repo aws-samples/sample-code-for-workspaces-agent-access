@@ -22,18 +22,18 @@ authlib==1.7.1
     # via fastmcp
 aws-bedrock-token-generator==1.1.0
     # via strands-agents
-awscrt==0.31.2
+awscrt==0.36.0
     # via botocore
 backports-tarfile==1.2.0 ; python_full_version < '3.12'
     # via jaraco-context
 beartype==0.22.9
     # via py-key-value-aio
-boto3==1.42.93
+boto3==1.43.108
     # via
     #   -r requirements.in
     #   mcp-proxy-for-aws
     #   strands-agents
-botocore==1.42.94
+botocore==1.43.111
     # via
     #   aws-bedrock-token-generator
     #   boto3
@@ -241,7 +241,7 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
-s3transfer==0.16.1
+s3transfer==0.19.2
     # via boto3
 secretstorage==3.5.0 ; sys_platform == 'linux'
     # via keyring
