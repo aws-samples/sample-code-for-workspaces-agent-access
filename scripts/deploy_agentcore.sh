@@ -11,7 +11,7 @@ set -euo pipefail
 #
 # Usage:
 #   ./scripts/deploy_agentcore.sh
-#   ./scripts/deploy_agentcore.sh --agent pdf_extractor_demo --name MyPdfAgent
+#   ./scripts/deploy_agentcore.sh --agent application_validation --name MyValidationAgent
 #   ./scripts/deploy_agentcore.sh --cleanup
 # ──────────────────────────────────────────────────────────────
 
@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
-AGENT_NAME="pdf_extractor_demo"
+AGENT_NAME="application_validation"
 AC_PROJECT_NAME="WorkspacesAgentDemo"
 CLEANUP=false
 
@@ -43,7 +43,7 @@ while [[ $# -gt 0 ]]; do
     --cleanup) CLEANUP=true; shift ;;
     --help)
       echo "Usage: $0 [OPTIONS]"
-      echo "  --agent NAME    Agent to deploy (default: pdf_extractor_demo)"
+      echo "  --agent NAME    Agent to deploy (default: application_validation)"
       echo "  --name NAME     AgentCore project name (default: WorkspacesAgentDemo)"
       echo "  --region REGION AWS region (default: auto-detect)"
       echo "  --cleanup       Remove deployed resources"
@@ -231,7 +231,7 @@ logger = logging.getLogger(__name__)
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP_DIR)
 
-AGENT_NAME = os.environ.get("AGENT_NAME", "pdf_extractor_demo")
+AGENT_NAME = os.environ.get("AGENT_NAME", "application_validation")
 MCP_ENDPOINT = os.environ.get("MCP_ENDPOINT", "")
 if not MCP_ENDPOINT:
     logger.error("MCP_ENDPOINT env var is required")
@@ -325,11 +325,16 @@ def _build_agent(body):
     caller can surface it in the response.
     """
     from lib import agent_common, ScreenshotPruningConversationManager
-    from strands import Agent
-    from strands.models.bedrock import BedrockModel
-    from strands.tools.mcp import MCPClient
-    from mcp_proxy_for_aws.client import aws_iam_streamablehttp_client
+    from lib.agent_factory import agent_options
     import glob
+
+    # This handler authenticates with a streaming URL only. Reject Domain Join
+    # fields loudly instead of silently ignoring them.
+    if body.get("saml_assertion") or body.get("stack_arn"):
+        raise ValueError(
+            "Domain Join (saml_assertion / stack_arn) is not supported by this "
+            "handler. Pass {\"streaming_url\": \"<URL>\"} instead."
+        )
 
     streaming_url = body.get("streaming_url")
     try:
@@ -349,7 +354,7 @@ def _build_agent(body):
     except ValueError as e:
         raise ValueError(f"invalid endpoint/region: {e}") from e
     task_prompt_override = body.get("task_prompt") or body.get("prompt")
-    model_id = body.get("model_id", "global.anthropic.claude-sonnet-4-6")
+    model_id = body.get("model_id", "global.anthropic.claude-sonnet-5-5")
 
     if not streaming_url:
         raise ValueError(
@@ -375,45 +380,35 @@ def _build_agent(body):
         except Exception:
             pass
 
-    model = BedrockModel(model_id=model_id, region_name=llm_region)
+    # The same model, transport, pruning and run settings as the command-line agents: the shared
+    # parser's defaults (prompt caching, 1280x720 tools, no run limits) with this request's values.
+    args = agent_common.create_base_parser("AgentCore handler").parse_args([])
+    args.streaming_url = streaming_url
+    args.mcp_endpoint = mcp_endpoint
+    args.mcp_region = mcp_region
+    args.region = llm_region
+    args.model_id = model_id
+    args.expire_session_on_exit = bool(body.get("expire_session_on_exit"))
+    args.max_turns = int(body.get("max_turns") or 0)
+    args.max_seconds = int(body.get("max_seconds") or 0)
 
-    def mcp_factory():
-        return aws_iam_streamablehttp_client(
-            endpoint=mcp_endpoint,
-            aws_service=AWS_SERVICE_NAME,
-            aws_region=mcp_region,
-            headers={
-                "X-Amzn-AgentAccess-Streaming-Session-Url": streaming_url,
-            },
-        )
+    model = agent_common.create_model(args)
+    mcp_factory = agent_common.create_mcp_client_factory(args)
+    conv_manager = ScreenshotPruningConversationManager(
+        keep_last_n=args.keep_screenshots,
+        batch=agent_common.resolve_prune_batch(args),
+    )
 
-    # Retry MCP client startup — session may still be initializing
-    max_retries = 3
-    last_err = None
-    for attempt in range(1, max_retries + 1):
-        try:
-            mcp_client = MCPClient(mcp_factory, startup_timeout=120)
-            agent = Agent(
-                model=model,
-                tools=[mcp_client],
-                system_prompt=system_prompt,
-                conversation_manager=ScreenshotPruningConversationManager(),
-            )
-            return agent, task_prompt
-        except Exception as e:
-            last_err = e
-            cause = e.__cause__ or e.__context__ or e
-            logger.warning(
-                f"MCP connect attempt {attempt}/{max_retries} failed: "
-                f"{type(cause).__name__}: {cause}"
-            )
-            if attempt < max_retries:
-                time.sleep(10 * attempt)
-
-    raise RuntimeError(
-        f"Failed to connect to MCP after {max_retries} attempts. "
-        f"Last error: {type(last_err).__name__}: {last_err}"
-    ) from last_err
+    # The connection is made on the first model call, where the agent retries it; a client that is
+    # never closed would keep the desktop attached until the service times it out, so the handler
+    # closes it when the invocation ends (see handler()).
+    mcp_client = agent_common.build_mcp_client(mcp_factory, args.mcp_timeout)
+    agent = agent_common.make_agent(
+        model, system_prompt, mcp_client,
+        conversation_manager=conv_manager,
+        **agent_options(args),
+    )
+    return agent, task_prompt
 
 
 @app.entrypoint
@@ -476,6 +471,10 @@ async def handler(payload):
             "traceback": traceback.format_exc(limit=10),
             "agent": AGENT_NAME,
         }
+    finally:
+        # End the MCP session with its DELETE so the next invocation can use the desktop.
+        from lib import agent_common
+        await asyncio.to_thread(agent_common.close_mcp_clients)
 
 if __name__ == "__main__":
     app.run()
@@ -488,16 +487,16 @@ info "Step 3: Updating dependencies..."
 
 # Container deps pinned to the same versions as requirements.txt at the
 # package root. Bump both places together. See requirements.in for the
-# source of truth and regenerate the hashed lockfile with pip-compile.
+# source of truth; regenerate requirements.txt with the uv command it gives.
 if [ -f "$APP_DIR/pyproject.toml" ]; then
   cd "$APP_DIR"
   for dep in \
-    "mcp-proxy-for-aws==1.4.0" \
-    "strands-agents==1.36.0" \
+    "mcp-proxy-for-aws==1.7.0" \
+    "strands-agents==1.57.1" \
     "mcp==1.27.0" \
     "boto3==1.42.93" \
   ; do
-    uv add --quiet "$dep" 2>/dev/null || true
+    uv add --quiet "$dep" || fail "Could not pin $dep in the AgentCore project (uv add failed)"
   done
   cd "$BUILD_DIR"
   ok "Dependencies installed"
@@ -665,7 +664,7 @@ if [ -n "$EXEC_ROLE" ] && [ "$EXEC_ROLE" != "None" ]; then
 
   # Scope Bedrock / AppStream / logs actions to the specific resources this
   # runtime needs. Operators should export these before running the deploy:
-  #   ALLOWED_MODEL_ARNS  = "arn:aws:bedrock:...::foundation-model/global.anthropic.claude-sonnet-4-6,..."
+  #   ALLOWED_MODEL_ARNS  = "arn:aws:bedrock:...::foundation-model/anthropic.claude-sonnet-5-5,..."
   #   STACK_ARN           = "arn:aws:appstream:us-east-1:123:stack/WorkspacesAgentDemo"
   #   FLEET_ARN           = "arn:aws:appstream:us-east-1:123:fleet/WorkspacesAgentDemo"
   # Defaults below are permissive to keep the demo working out of the box;

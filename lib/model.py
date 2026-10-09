@@ -2,10 +2,15 @@
 # SPDX-License-Identifier: MIT-0
 """Model provider creation for Bedrock (Converse API) and bedrock-mantle."""
 
+import json
 import os
 import sys
 
+from botocore.credentials import CredentialProvider
 from strands.models.bedrock import BedrockModel
+from strands.models.model import CacheConfig
+
+from . import computer_tool
 
 
 # Accepted regions for Bedrock calls.
@@ -21,6 +26,63 @@ def _supports_converse_images(model_id):
     """Return True if model_id works on bedrock-runtime Converse API with images."""
     lower = model_id.lower()
     return any(x in lower for x in ("anthropic", "claude", "amazon.nova", "nova-pro", "nova-lite", "nova-premier"))
+
+
+_PLACEHOLDER_TOOL_SPEC = {
+    "name": "noop", "description": "Does nothing. Never call this tool.",
+    "inputSchema": {"json": {"type": "object", "properties": {}}},
+}
+
+
+class NativeComputerBedrockModel(BedrockModel):
+    """BedrockModel that offers Anthropic's ``computer_20251124`` tool instead of the desktop function tools.
+
+    The agent still registers the Agent Access tools and a ``computer`` tool that runs on them
+    (``lib.computer_tool``); only the request to the model changes. The desktop function tools
+    and the ``computer`` function spec are left out of ``toolConfig`` and the typed tool goes in
+    ``additionalModelRequestFields``, next to the beta header. Other tools (forwarded MCP tools)
+    are sent as usual. ``toolConfig`` must exist whenever the history holds tool calls, so a
+    placeholder function tool stands in when nothing else is left; it is sent on every request,
+    first one included, so the cached prefix never changes shape.
+    """
+
+    computer_version = computer_tool.DEFAULT_VERSION      # "20251124" or "20260801"
+
+    def format_request(self, messages, tool_specs=None, system_prompt_content=None, tool_choice=None,
+                       dynamic_trailing_blocks=0, **kwargs):
+        kept = [spec for spec in (tool_specs or []) if not computer_tool.is_desktop_spec(spec["name"], self.computer_version)]
+        request = super().format_request(
+            messages, kept or [_PLACEHOLDER_TOOL_SPEC], system_prompt_content, tool_choice,
+            dynamic_trailing_blocks, **kwargs)
+        fields = dict(request.get("additionalModelRequestFields") or {})
+        if self.computer_version == "20260801":
+            fields["tools"] = [json.loads(json.dumps(computer_tool.TOOLSET_DEFINITION))]      # needs no beta header
+        else:
+            fields["tools"] = [dict(computer_tool.TOOL_DEFINITION)]
+            betas = list(fields.get("anthropic_beta") or [])
+            if computer_tool.COMPUTER_USE_BETA not in betas:
+                betas.append(computer_tool.COMPUTER_USE_BETA)
+            fields["anthropic_beta"] = betas
+        request["additionalModelRequestFields"] = fields
+        return request
+
+
+class _SessionCredentials(CredentialProvider):
+    """Expose one boto3 session's credentials to Strands' ``bedrock_mantle_config``.
+
+    Used so ``--llm-profile`` also selects the identity that mints the short-term
+    Bedrock key for bedrock-mantle models.
+    """
+
+    METHOD = "boto3-session"
+    CANONICAL_NAME = "boto3-session"
+
+    def __init__(self, session):
+        super().__init__()
+        self._session = session
+
+    def load(self):
+        return self._session.get_credentials()
 
 
 def create_model(args):
@@ -41,8 +103,23 @@ def create_model(args):
 
     if _supports_converse_images(model_id):
         model_kwargs = {"model_id": model_id}
+        if getattr(args, 'prompt_cache', False):
+            # "auto": a rolling cache point at the end of the conversation plus one after the system
+            # prompt; tools_ttl adds one after the tool schemas, so the tools stay cached when only
+            # the prompt changes. Three of the four cache points Bedrock allows.
+            model_kwargs["cache_config"] = CacheConfig(strategy="auto", tools_ttl=True)
+        if getattr(args, 'max_tokens', None):
+            model_kwargs["max_tokens"] = args.max_tokens
 
-        if getattr(args, 'computer_use_tool', False) and ("anthropic" in model_id.lower() or "claude" in model_id.lower()):
+        native = getattr(args, 'native_computer_tool', False)
+        is_claude = "anthropic" in model_id.lower() or "claude" in model_id.lower()
+        if native and not is_claude:
+            raise ValueError("--native-computer-tool needs a Claude model; "
+                             f"{model_id!r} only works with the desktop function tools")
+        version = getattr(args, 'computer_tool_version', computer_tool.DEFAULT_VERSION)
+        if version not in computer_tool.VERSIONS:
+            raise ValueError(f"unknown computer tool version {version!r}; choose one of {sorted(computer_tool.VERSIONS)}")
+        if native and version == "20251124":
             model_kwargs["additional_request_fields"] = {
                 "anthropic_beta": ["computer-use-2025-11-24"],
             }
@@ -53,7 +130,17 @@ def create_model(args):
         else:
             model_kwargs["region_name"] = args.region
 
-        return BedrockModel(**model_kwargs)
+        effort = getattr(args, 'effort', None)
+        if effort and is_claude:
+            fields = dict(model_kwargs.get("additional_request_fields") or {})
+            fields["thinking"] = {"type": "adaptive"}
+            fields["output_config"] = {"effort": effort}
+            model_kwargs["additional_request_fields"] = fields
+        if not native:
+            return BedrockModel(**model_kwargs)
+        model = NativeComputerBedrockModel(**model_kwargs)
+        model.computer_version = version
+        return model
 
     else:
         from strands.models.openai import OpenAIModel
@@ -80,38 +167,28 @@ def create_model(args):
             or os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
         )
 
-        if not api_key:
-            try:
-                from aws_bedrock_token_generator import BedrockTokenGenerator
-                import boto3 as _boto3
+        if api_key:
+            # Caller-supplied key: pass it straight through. This path targets the
+            # /v1 base path, which serves most bedrock-mantle models. Models served
+            # from /openai/v1 (for example openai.gpt-5.*) need the SDK to pick the
+            # path - omit the key and let bedrock_mantle_config mint one instead.
+            mantle_url = f"https://bedrock-mantle.{args.region}.api.aws/v1"
+            sys.stdout.write(f"  Model provider: bedrock-mantle ({mantle_url})\n")
+            sys.stdout.flush()
+            return _MantleModel(
+                client_args={"base_url": mantle_url, "api_key": api_key},
+                model_id=model_id,
+            )
 
-                session = _boto3.Session(
-                    profile_name=getattr(args, 'llm_profile', None),
-                    region_name=args.region,
-                )
-                credentials = session.get_credentials().get_frozen_credentials()
-                generator = BedrockTokenGenerator()
-                api_key = generator.get_token(credentials=credentials, region=args.region)
-                sys.stdout.write("  Auto-generated short-term Bedrock API key\n")
-                sys.stdout.flush()
-            except ImportError:
-                raise RuntimeError(
-                    f"Model {model_id!r} requires bedrock-mantle (OpenAI-compatible endpoint).\n"
-                    "  Install aws-bedrock-token-generator to auto-generate a key:\n"
-                    "    pip install aws-bedrock-token-generator\n"
-                    "  Or set AWS_BEARER_TOKEN_BEDROCK / --bedrock-api-key manually."
-                )
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to auto-generate Bedrock API key: {e}\n"
-                    "  Set AWS_BEARER_TOKEN_BEDROCK in the environment or pass --bedrock-api-key."
-                ) from e
+        # No key supplied: Strands mints a fresh short-term Bedrock key from the AWS
+        # credential chain for every request (so long runs outlive any single key)
+        # and picks the right base path for the model.
+        mantle_config = {"region": args.region}
+        if getattr(args, 'llm_profile', None):
+            mantle_config["credentials_provider"] = _SessionCredentials(
+                boto3.Session(profile_name=args.llm_profile, region_name=args.region))
 
-        mantle_url = f"https://bedrock-mantle.{args.region}.api.aws/v1"
-        sys.stdout.write(f"  Model provider: bedrock-mantle ({mantle_url})\n")
+        sys.stdout.write(
+            f"  Model provider: bedrock-mantle ({args.region}, short-term keys minted per request)\n")
         sys.stdout.flush()
-
-        return _MantleModel(
-            client_args={"base_url": mantle_url, "api_key": api_key},
-            model_id=model_id,
-        )
+        return _MantleModel(bedrock_mantle_config=mantle_config, model_id=model_id)

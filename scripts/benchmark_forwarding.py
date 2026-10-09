@@ -39,7 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from strands import Agent
+from lib.agent_factory import make_agent
 from lib.model import create_model
 from lib.mcp_client import create_mcp_client_factory, build_mcp_client
 from lib.strands_logger import StrandsAgentLogger
@@ -84,7 +84,7 @@ EXPECTED_CONTENT = "Hello from MCP filesystem server"
 def create_parser():
     parser = argparse.ArgumentParser(description="Benchmark: forwarded tools vs desktop-only")
     parser.add_argument('--streaming-url', required=True, help='AppStream streaming URL')
-    parser.add_argument('--model-id', default='global.anthropic.claude-sonnet-4-6')
+    parser.add_argument('--model-id', default='global.anthropic.claude-sonnet-5-5')
     parser.add_argument('--region', default=os.environ.get('AWS_REGION', 'us-east-1'))
     parser.add_argument('--mcp-endpoint', default=None)
     parser.add_argument('--mcp-region', default=None)
@@ -94,6 +94,15 @@ def create_parser():
     parser.add_argument('--output', default='reports/benchmark_forwarding.json',
                        help='Output JSON path')
     return parser
+
+
+def count_screenshots(metrics):
+    """Screenshots a run took. The logger records the MCP tool as ``action``; ``tool_name`` is always ``dcv``.
+
+    A screenshot that failed (say "dcv session not ready") produced no image and is not counted.
+    """
+    return sum(1 for tc in metrics.get("tool_calls", [])
+               if tc.get("action") == "screenshot" and tc.get("success", True))
 
 
 def run_single_trial(args, arm_name, use_forwarded):
@@ -144,10 +153,8 @@ def run_single_trial(args, arm_name, use_forwarded):
 
                 mcp_client.load_tools = filtered_load
 
-            agent = Agent(
-                model=model,
-                tools=[mcp_client],
-                system_prompt=system_prompt,
+            agent = make_agent(
+                model, system_prompt, mcp_client,
                 conversation_manager=conv_manager,
                 hooks=[logger],
                 callback_handler=print_handler,
@@ -181,14 +188,11 @@ def run_single_trial(args, arm_name, use_forwarded):
 
     correct = EXPECTED_CONTENT.lower() in extracted.lower()
 
-    # Count screenshots
-    screenshot_count = sum(
-        1 for tc in metrics.get("tool_calls", [])
-        if "screenshot" in tc.get("tool_name", "").lower()
-    )
+    screenshot_count = count_screenshots(metrics)
 
     trial_result = {
         "arm": arm_name,
+        "model_id": args.model_id,
         "use_forwarded": use_forwarded,
         "success": success,
         "correct": correct,
@@ -222,7 +226,7 @@ def print_comparison(results):
     print("BENCHMARK RESULTS: Forwarded Tools vs. Desktop-Only")
     print("=" * 70)
     print(f"Task: Read hello.txt and report contents")
-    print(f"Model: {results[0].get('model_id', 'claude-sonnet-4-6')}")
+    print(f"Model: {results[0].get('model_id', 'claude-sonnet-5-5')}")
     print(f"Trials per arm: {len(with_results)}")
     print()
     print(f"{'Metric':<25} {'WITH forwarded':<20} {'WITHOUT (desktop)':<20} {'Δ'}")

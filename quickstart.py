@@ -28,12 +28,13 @@ from mcp_proxy_for_aws.client import aws_iam_streamablehttp_client
 
 REGION = "us-east-1"
 MCP_ENDPOINT = f"https://agentaccess-mcp.{REGION}.api.aws/mcp"
-MODEL_ID = "global.anthropic.claude-sonnet-4-6"
+MODEL_ID = "global.anthropic.claude-sonnet-5-5"
 
-if len(sys.argv) < 2:
+if len(sys.argv) != 2 or sys.argv[1].startswith("-"):
     print("Usage: python3 quickstart.py <STREAMING_URL>")
     print("       STREAMING_URL=$(scripts/streaming_url.sh)")
-    sys.exit(1)
+    print("Domain-joined fleets: use agents/generic_cua/agent.py --saml-assertion-file ... --stack-arn ...")
+    sys.exit(2 if len(sys.argv) > 1 else 1)
 
 streaming_url = sys.argv[1]
 
