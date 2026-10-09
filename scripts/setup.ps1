@@ -320,12 +320,12 @@ if ([string]::IsNullOrWhiteSpace($StreamingUrl) -or $StreamingUrl -eq 'None') {
 # ── Step 7: Run demo agent ────────────────────────────────────
 Write-Separator "Step 7/7: Running demo agent"
 
-Write-Info "Starting pdf_extractor_demo..."
+Write-Info "Starting application_validation..."
 Write-Info "Press Ctrl+C to stop."
 Write-Host ""
 
 if ($StreamingUrl) {
-    & $VenvPython (Join-Path $ProjectRoot 'agents\pdf_extractor_demo\agent.py') `
+    & $VenvPython (Join-Path $ProjectRoot 'agents\application_validation\agent.py') `
         --streaming-url $StreamingUrl
 } else {
     Write-Host ""
@@ -337,6 +337,6 @@ if ($StreamingUrl) {
     Write-Host "    --user-id testuser --validity 3600 ``"
     Write-Host "    --query StreamingURL --output text"
     Write-Host ""
-    Write-Host "  .\venv\Scripts\python.exe agents\pdf_extractor_demo\agent.py --streaming-url '<URL>'"
+    Write-Host "  .\venv\Scripts\python.exe agents\application_validation\agent.py --streaming-url '<URL>'"
     Write-Host ""
 }

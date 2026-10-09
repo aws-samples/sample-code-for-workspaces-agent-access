@@ -179,5 +179,5 @@ Save the skill as `<app-name>-skill.json` in the agent's `skills/` directory.
 
 ## Example
 
-See `agents/paint_demo/skills/ms-paint-skill.json` for a complete example of a
-well-structured desktop application skill targeting MS Paint.
+See `agents/application_validation/skills/application-validation-skill.json` for a complete example of a
+well-structured desktop application skill.

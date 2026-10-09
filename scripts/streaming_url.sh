@@ -9,7 +9,7 @@ set -euo pipefail
 #
 # Usage:
 #   STREAMING_URL=$(scripts/streaming_url.sh)
-#   python3 agents/pdf_extractor_demo/agent.py --streaming-url "$STREAMING_URL"
+#   python3 agents/application_validation/agent.py --streaming-url "$STREAMING_URL"
 # ──────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
