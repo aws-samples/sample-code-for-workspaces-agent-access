@@ -4,7 +4,7 @@ aiofile==3.9.0
     # via py-key-value-aio
 annotated-types==0.7.0
     # via pydantic
-anyio==4.13.0
+anyio==4.14.2
     # via
     #   httpx
     #   mcp
@@ -22,18 +22,18 @@ authlib==1.7.1
     # via fastmcp
 aws-bedrock-token-generator==1.1.0
     # via strands-agents
-awscrt==0.31.2
+awscrt==0.36.0
     # via botocore
 backports-tarfile==1.2.0 ; python_full_version < '3.12'
     # via jaraco-context
 beartype==0.22.9
     # via py-key-value-aio
-boto3==1.42.93
+boto3==1.43.108
     # via
     #   -r requirements.in
     #   mcp-proxy-for-aws
     #   strands-agents
-botocore==1.42.94
+botocore==1.43.111
     # via
     #   aws-bedrock-token-generator
     #   boto3
@@ -56,7 +56,7 @@ colorama==0.4.6 ; sys_platform == 'win32'
     # via
     #   click
     #   tqdm
-cryptography==48.0.1
+cryptography==50.0.2
     # via
     #   authlib
     #   joserfc
@@ -124,7 +124,7 @@ jmespath==1.1.0
     # via
     #   boto3
     #   botocore
-joserfc==1.6.4
+joserfc==1.6.8
     # via authlib
 jsonref==1.1.0
     # via fastmcp
@@ -140,7 +140,7 @@ keyring==25.7.0
     # via py-key-value-aio
 markdown-it-py==4.0.0
     # via rich
-mcp==1.27.0
+mcp==1.28.1
     # via
     #   -r requirements.in
     #   fastmcp
@@ -199,11 +199,11 @@ pydantic==2.13.3
     #   strands-agents
 pydantic-core==2.46.3
     # via pydantic
-pydantic-settings==2.14.0
+pydantic-settings==2.14.2
     # via mcp
 pygments==2.20.0
     # via rich
-pyjwt==2.13.0
+pyjwt==2.15.1
     # via mcp
 pyperclip==1.11.0
     # via fastmcp
@@ -241,7 +241,7 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
-s3transfer==0.16.1
+s3transfer==0.19.2
     # via boto3
 secretstorage==3.5.0 ; sys_platform == 'linux'
     # via keyring
@@ -255,7 +255,7 @@ starlette==1.3.1
     # via
     #   mcp
     #   sse-starlette
-strands-agents==1.57.1
+strands-agents==1.58.0
     # via -r requirements.in
 tomli==2.5.0 ; python_full_version < '3.11'
     # via cyclopts
@@ -288,7 +288,7 @@ typing-inspection==0.4.2
     #   pydantic-settings
 uncalled-for==0.3.1
     # via fastmcp
-urllib3==2.7.0
+urllib3==2.8.0
     # via botocore
 uvicorn==0.46.0
     # via
