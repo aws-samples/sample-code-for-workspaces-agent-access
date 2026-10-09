@@ -77,25 +77,37 @@ def load_recommendations_file(recommendations_path):
         return None
 
 
+def extract_key_metrics(m):
+    """The numbers compared between two sessions. Tolerates runs recorded by older versions."""
+    prompt_versions = m.get('prompt_versions') or {}
+    return {
+        "duration": m.get('duration_seconds', 0),
+        "success": m.get('success', False),
+        "iterations": m.get('iterations', 0),
+        "total_tokens": (m.get('total_tokens') or {}).get('total', 0),
+        "input_tokens": (m.get('total_tokens') or {}).get('input', 0),
+        "output_tokens": (m.get('total_tokens') or {}).get('output', 0),
+        "tool_calls": len(m.get('tool_calls', [])),
+        "screenshots": sum(1 for t in m.get('tool_calls', [])
+                           if t.get('action') == 'screenshot' and t.get('success', True)),
+        "model_calls": len(m.get('model_calls') or m.get('claude_calls') or []),
+        "tool_success_rate": (m.get('summary') or {}).get('tool_success_rate', 0),
+        "validation_accuracy": (m.get('validation') or {}).get('overall_accuracy', None),
+        # a prompt without frontmatter has no version: {} rather than None, so .get() below is safe
+        "prompt_versions": {
+            "system_prompt": prompt_versions.get('system_prompt') or {},
+            "task_prompt": prompt_versions.get('task_prompt') or {},
+        },
+    }
+
+
+def pct_change(after, before):
+    """Signed percent change as text; "n/a" when there is no baseline to compare with (a failed run)."""
+    return f"{(after - before) / before * 100:+.1f}%" if before else "n/a"
+
+
 def compare_sessions_with_claude(before_metrics, after_metrics, recommendations, region='us-east-1'):
     """Use Claude to compare before/after sessions and evaluate recommendations"""
-
-    # Extract key metrics for comparison
-    def extract_key_metrics(m):
-        return {
-            "duration": m.get('duration_seconds', 0),
-            "success": m.get('success', False),
-            "iterations": m.get('iterations', 0),
-            "total_tokens": m.get('total_tokens', {}).get('total', 0),
-            "input_tokens": m.get('total_tokens', {}).get('input', 0),
-            "output_tokens": m.get('total_tokens', {}).get('output', 0),
-            "tool_calls": len(m.get('tool_calls', [])),
-            "screenshots": sum(1 for t in m.get('tool_calls', []) if t.get('action') == 'screenshot'),
-            "claude_calls": len(m.get('claude_calls', [])),
-            "tool_success_rate": m.get('summary', {}).get('tool_success_rate', 0),
-            "validation_accuracy": m.get('validation', {}).get('overall_accuracy', None),
-            "prompt_versions": m.get('prompt_versions', {})
-        }
 
     before = extract_key_metrics(before_metrics)
     after = extract_key_metrics(after_metrics)
@@ -116,7 +128,7 @@ Performance:
 - Total Tokens: {before['total_tokens']:,} (Input: {before['input_tokens']:,}, Output: {before['output_tokens']:,})
 - Screenshots: {before['screenshots']}
 - Iterations: {before['iterations']}
-- Claude API Calls: {before['claude_calls']}
+- Model API Calls: {before['model_calls']}
 - Tool Success Rate: {before['tool_success_rate']:.1f}%
 - Validation Accuracy: {before['validation_accuracy']}%
 
@@ -125,12 +137,12 @@ Session: {after_metrics.get('session_id')}
 Prompt Versions: System {after['prompt_versions'].get('system_prompt', {}).get('version', 'unknown')}, Task {after['prompt_versions'].get('task_prompt', {}).get('version', 'unknown')}
 
 Performance:
-- Duration: {after['duration']:.1f}s ({((after['duration'] - before['duration']) / before['duration'] * 100):+.1f}% change)
+- Duration: {after['duration']:.1f}s ({pct_change(after['duration'], before['duration'])} change)
 - Success: {after['success']}
-- Total Tokens: {after['total_tokens']:,} ({((after['total_tokens'] - before['total_tokens']) / before['total_tokens'] * 100):+.1f}% change)
+- Total Tokens: {after['total_tokens']:,} ({pct_change(after['total_tokens'], before['total_tokens'])} change)
 - Screenshots: {after['screenshots']} ({after['screenshots'] - before['screenshots']:+d} change)
 - Iterations: {after['iterations']} ({after['iterations'] - before['iterations']:+d} change)
-- Claude API Calls: {after['claude_calls']} ({after['claude_calls'] - before['claude_calls']:+d} change)
+- Model API Calls: {after['model_calls']} ({after['model_calls'] - before['model_calls']:+d} change)
 - Tool Success Rate: {after['tool_success_rate']:.1f}% ({after['tool_success_rate'] - before['tool_success_rate']:+.1f}% change)
 - Validation Accuracy: {after['validation_accuracy']}% ({(after['validation_accuracy'] or 0) - (before['validation_accuracy'] or 0):+.1f}% change)
 
@@ -148,9 +160,9 @@ Provide a comprehensive evaluation with these sections:
 
 ### 2. Metrics Analysis
 For each key metric, analyze:
-- **Duration**: Target was 50% reduction. Actual change: {((after['duration'] - before['duration']) / before['duration'] * 100):+.1f}%
+- **Duration**: Target was 50% reduction. Actual change: {pct_change(after['duration'], before['duration'])}
 - **Screenshots**: Target was 68% reduction (31 → 8-10). Actual: {before['screenshots']} → {after['screenshots']}
-- **Tokens**: Target was 43% reduction. Actual change: {((after['total_tokens'] - before['total_tokens']) / before['total_tokens'] * 100):+.1f}%
+- **Tokens**: Target was 43% reduction. Actual change: {pct_change(after['total_tokens'], before['total_tokens'])}
 - **Accuracy**: Must remain 100%. Actual: {before['validation_accuracy']}% → {after['validation_accuracy']}%
 
 ### 3. Recommendation Effectiveness
@@ -405,16 +417,16 @@ Examples:
   python scripts/analyze_prompts.py
 
   # Analyze agent logs
-  python scripts/analyze_prompts.py --agent agents/paint_demo
+  python scripts/analyze_prompts.py --agent agents/application_validation
 
   # Compare before/after optimization
-  python scripts/analyze_prompts.py --compare --agent agents/paint_demo \\
+  python scripts/analyze_prompts.py --compare --agent agents/application_validation \\
     --before 20260304_190033 --after 20260304_200000 \\
     --recommendations reports/prompt_analysis_20260304_191820.md
         """
     )
 
-    parser.add_argument('--agent', help='Agent directory path (e.g., agents/paint_demo). Uses logs/, metrics/, prompts/, skills/ subdirectories')
+    parser.add_argument('--agent', help='Agent directory path (e.g., agents/application_validation). Uses logs/, metrics/, prompts/, skills/ subdirectories')
     parser.add_argument('--compare', action='store_true', help='Compare before/after sessions to evaluate optimization effectiveness')
     parser.add_argument('--before', help='Before session ID (required for --compare)')
     parser.add_argument('--after', help='After session ID (required for --compare)')
@@ -579,7 +591,7 @@ Examples:
 
     # Load skill documentation (optional) - try common skill file patterns
     skill_doc = None
-    for skill_name in ['ms-paint-skill.json', 'skill.json']:
+    for skill_name in ['application-validation-skill.json', 'skill.json']:
         skill_path = f"{skills_dir}/{skill_name}"
         skill_doc = load_skill_file(skill_path)
         if skill_doc:

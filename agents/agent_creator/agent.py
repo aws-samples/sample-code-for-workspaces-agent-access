@@ -36,7 +36,7 @@ def interview():
     print("  " + "─" * 40 + "\n")
 
     questions = [
-        ("app_name", "What application do you want to automate? (e.g., Notepad, Excel, Paint)"),
+        ("app_name", "What application do you want to automate? (e.g., Notepad, Excel, Calculator)"),
         ("app_launch", "How do you launch it? (e.g., 'search for notepad in Start menu', 'double-click desktop icon')"),
         ("tasks", "What tasks should the agent perform? (describe the workflow in a few sentences)"),
         ("ui_layout", "Describe the UI layout (e.g., 'toolbar at top, canvas in center, sidebar on left')"),
@@ -81,21 +81,21 @@ def build_system_prompt():
         except Exception as e:
             print(f"  Warning: Could not load {path}: {e}")
 
-    # Load the paint skill as a reference example
-    paint_skill_path = os.path.join(root_dir, "agents/paint_demo/skills/ms-paint-skill.json")
-    paint_example = ""
+    # Load the application validation skill as a reference example
+    reference_skill_path = os.path.join(root_dir, "agents/application_validation/skills/application-validation-skill.json")
+    reference_skill_example = ""
     try:
-        with open(paint_skill_path, 'r') as f:
-            paint_example = f.read()
+        with open(reference_skill_path, 'r') as f:
+            reference_skill_example = f.read()
     except Exception:
         pass
 
-    # Load the paint demo system prompt as a reference for generated agent prompts
-    paint_prompt_path = os.path.join(root_dir, "agents/paint_demo/prompts/system_prompt.md")
-    paint_prompt_example = ""
+    # Load the application validation system prompt as a reference for generated agent prompts
+    reference_prompt_path = os.path.join(root_dir, "agents/application_validation/prompts/system_prompt.md")
+    reference_prompt_example = ""
     try:
-        with open(paint_prompt_path, 'r') as f:
-            paint_prompt_example = f.read()
+        with open(reference_prompt_path, 'r') as f:
+            reference_prompt_example = f.read()
     except Exception:
         pass
 
@@ -110,20 +110,20 @@ the user's description of a Windows desktop application:
 
 {skill_knowledge}
 
-## Reference Example: MS Paint Skill JSON
+## Reference Example: Application Validation Skill JSON
 
 This is a complete, well-structured skill. Use it as your template for structure, depth, and style:
 
 ```json
-{paint_example}
+{reference_skill_example}
 ```
 
 ## Reference Example: Agent System Prompt
 
-This is the system prompt used by the paint demo agent. Generate a similar one for the new application:
+This is the system prompt used by the application validation agent. Generate a similar one for the new application:
 
 ```markdown
-{paint_prompt_example}
+{reference_prompt_example}
 ```
 
 ## Output Format
@@ -225,22 +225,20 @@ def scaffold_agent(app_name, blocks, root_dir):
             f.write(blocks['task_prompt'])
         print(f"  ✓ Task prompt: {tp_path}")
 
-    # Copy agent.py from paint_demo as a template and patch it
-    paint_agent = os.path.join(root_dir, "agents/paint_demo/agent.py")
+    # Copy agent.py from application_validation as a template and patch it
+    reference_agent = os.path.join(root_dir, "agents/application_validation/agent.py")
     new_agent = os.path.join(agent_dir, "agent.py")
     try:
-        with open(paint_agent, 'r') as f:
+        with open(reference_agent, 'r') as f:
             agent_code = f.read()
 
         # Patch the agent code for the new application
-        agent_code = agent_code.replace('paint_demo', f'{agent_slug}_demo')
-        agent_code = agent_code.replace('Paint Demo Agent', f'{app_name} Agent')
-        agent_code = agent_code.replace('Paint Drawing Demo Agent', f'{app_name} Automation Agent')
-        agent_code = agent_code.replace('ms-paint-skill.json', f'{agent_slug}-skill.json')
-        agent_code = agent_code.replace('MS PAINT SKILL', f'{app_name.upper()} SKILL')
+        agent_code = agent_code.replace('Application Validation Agent', f'{app_name} Automation Agent')
+        agent_code = agent_code.replace('application-validation-skill.json', f'{agent_slug}-skill.json')
+        agent_code = agent_code.replace('APPLICATION VALIDATION SKILL', f'{app_name.upper()} SKILL')
         agent_code = agent_code.replace(
-            'a remote Windows desktop and creates\nartwork using mouse and keyboard tools.',
-            f'a remote Windows desktop to automate\n{app_name} tasks.'
+            'The agent opens and validates desktop\\n"\n            "applications on a remote Windows desktop.',
+            f'The agent automates {app_name} on a\\n"\n            "remote Windows desktop.'
         )
 
         with open(new_agent, 'w') as f:
@@ -490,12 +488,12 @@ def run_update(args):
 
 def main():
     parser = argparse.ArgumentParser(description='Workspace Agent Creator')
-    parser.add_argument('--model-id', default='global.anthropic.claude-sonnet-4-6',
-                       help='Bedrock model ID (default: global.anthropic.claude-sonnet-4-6)')
+    parser.add_argument('--model-id', default='global.anthropic.claude-sonnet-5-5',
+                       help='Bedrock model ID (default: global.anthropic.claude-sonnet-5-5)')
     parser.add_argument('--no-prompt', action='store_true',
                        help='Skip interview and read from stdin as JSON')
     parser.add_argument('--update', metavar='AGENT_DIR',
-                       help='Update an existing agent based on a prompt analysis report (e.g., agents/paint_demo)')
+                       help='Update an existing agent based on a prompt analysis report (e.g., agents/application_validation)')
     parser.add_argument('--analysis', metavar='REPORT_PATH',
                        help='Path to prompt analysis report (default: most recent in reports/)')
     parser.add_argument('--region', default=os.environ.get('AWS_DEFAULT_REGION', os.environ.get('AWS_REGION', 'us-east-1')),

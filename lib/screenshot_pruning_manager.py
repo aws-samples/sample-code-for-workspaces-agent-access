@@ -3,159 +3,163 @@
 """
 Screenshot Pruning Conversation Manager.
 
-A ConversationManager that strips old screenshot image data from the conversation
-history before each model call, keeping only the most recent screenshot. This
-dramatically reduces token usage for computer-use agents that take many screenshots.
+Replaces old screenshots in the conversation with a short text placeholder before every
+model call, so a long run does not re-send every screen it has ever seen. Screenshots are
+already saved to disk by StrandsAgentLogger, so no data is lost.
 
-Screenshots are already saved to disk by StrandsAgentLogger, so no data is lost.
+Prompt caching matches an exact prefix of the request, so replacing a screenshot changes the
+request from that message onward. ``batch=N`` lets the window grow by N screenshots and prunes
+back to ``keep_last_n`` in one go, so the history stays byte-identical for the calls in between.
+Whether that beats pruning before every call (``batch=1``) depends on how big the stable prefix
+(tools + system prompt) is next to the screenshots; an AWS write-up measured a large saving with
+``keep_last_n=1`` and ``batch=1``. It is a setting to measure, not to assume.
 """
 
 from typing import Any
 
 from strands.agent.conversation_manager.conversation_manager import ConversationManager
+from strands.hooks import BeforeModelCallEvent
+
+DEFAULT_KEEP_SCREENSHOTS = 3
+DEFAULT_PRUNE_BATCH = 1
+DEFAULT_PRUNE_BATCH_CACHED = 10      # the agent's default with prompt caching on (about 45% lower cost at the same success in a live comparison)
+
+PLACEHOLDER = "[screenshot — saved to disk, removed from context]"
+
+
+def _is_image(block):
+    return isinstance(block, dict) and ("image" in block or block.get("type") in ("image", "image_url"))
+
+
+def screenshot_locations(messages):
+    """Where every screenshot is, oldest first.
+
+    A location is ``(message, block)`` for an image sitting in a message, or
+    ``(message, block, inner)`` for one inside a tool result. Handles the Converse format and the
+    OpenAI-compatible one Strands builds for bedrock-mantle models.
+    """
+    locations = []
+    for msg_idx, message in enumerate(messages):
+        if not isinstance(message, dict) or message.get("role") not in ("user", "tool"):
+            continue
+        content = message.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for block_idx, block in enumerate(content):
+            if not isinstance(block, dict):
+                continue
+            if _is_image(block):
+                locations.append((msg_idx, block_idx))
+            inner = block.get("toolResult", {}).get("content") if "toolResult" in block else None
+            if isinstance(inner, list):
+                locations.extend((msg_idx, block_idx, i) for i, b in enumerate(inner) if _is_image(b))
+    return locations
+
+
+def prune_screenshots(messages, keep_last_n=DEFAULT_KEEP_SCREENSHOTS, batch=DEFAULT_PRUNE_BATCH):
+    """Replace all but the newest ``keep_last_n`` screenshots with a placeholder, in place.
+
+    Nothing happens until there are ``keep_last_n + batch`` screenshots, so with ``batch=1`` every
+    call prunes down to ``keep_last_n``, and with a larger batch the pruning (and the cache
+    invalidation that comes with it) happens once per ``batch`` new screenshots. Only image blocks
+    change: no message or tool result is ever removed, so tool-use/tool-result pairs stay intact.
+    Returns how many screenshots were replaced.
+    """
+    keep_last_n = max(1, keep_last_n)
+    locations = screenshot_locations(messages)
+    if len(locations) < keep_last_n + max(1, batch):
+        return 0
+    old = locations[:-keep_last_n]
+    for location in old:
+        msg_idx, block_idx = location[0], location[1]
+        if len(location) == 2:
+            messages[msg_idx]["content"][block_idx] = {"text": PLACEHOLDER}
+        else:
+            messages[msg_idx]["content"][block_idx]["toolResult"]["content"][location[2]] = {"text": PLACEHOLDER}
+    return len(old)
+
+
+def _has_tool_result(message):
+    return any(isinstance(b, dict) and "toolResult" in b for b in message.get("content", []) or [])
+
+
+def trim_history(messages, max_messages, minimum=0):
+    """Drop the oldest messages so at most ``max_messages`` remain (at least ``minimum`` if a safe start is further).
+
+    The new first message is always a user message that answers nothing: cutting between a tool
+    call and its result would leave the result without its call, which Bedrock rejects. Returns how
+    many messages were dropped.
+    """
+    if max_messages <= 0 or len(messages) <= max_messages:
+        return 0
+    start = len(messages) - max_messages
+    while start < len(messages) and (messages[start].get("role") != "user" or _has_tool_result(messages[start])):
+        start += 1
+    if start >= len(messages):      # no safe place to cut inside the window: keep everything
+        return 0
+    del messages[:start]
+    return start
 
 
 class ScreenshotPruningConversationManager(ConversationManager):
-    """Prunes old screenshot images from conversation history.
-
-    Before each model invocation, walks the message history and replaces all
-    screenshot image content blocks except the most recent one with a lightweight
-    text placeholder. This keeps the LLM focused on the current screen state
-    while preserving the conversational flow.
+    """Prunes old screenshot images from the conversation before each model call.
 
     Usage:
-        from lib import ScreenshotPruningConversationManager
-
         agent = Agent(
             model=model,
             tools=[mcp_client],
             system_prompt=system_prompt,
-            conversation_manager=ScreenshotPruningConversationManager(),
+            conversation_manager=ScreenshotPruningConversationManager(keep_last_n=3),
         )
     """
 
-    PLACEHOLDER = "[screenshot — saved to disk, removed from context]"
+    PLACEHOLDER = PLACEHOLDER
 
-    def __init__(self, keep_last_n: int = 1, max_messages: int = 0):
+    def __init__(self, keep_last_n: int = DEFAULT_KEEP_SCREENSHOTS, max_messages: int = 0,
+                 batch: int = DEFAULT_PRUNE_BATCH):
         """Initialize the manager.
 
         Args:
-            keep_last_n: Number of most recent screenshots to keep in context.
-                         Defaults to 1 (only the latest screenshot is sent to the model).
-            max_messages: Maximum number of messages to keep in conversation history.
-                         Older messages are dropped entirely to prevent payload overflow.
-                         Defaults to 10 (~3-4 agent turns). bedrock-mantle has a strict
-                         body size limit (~20MB); each screenshot expands to ~1-2MB in
-                         the OpenAI wire format, so we keep the window very tight.
+            keep_last_n: Screenshots kept in context (the newest ones).
+            max_messages: Also keep at most this many messages (0 = no limit), cutting only where
+                no tool call is separated from its result. bedrock-mantle has a strict request
+                size limit (~20MB) and each screenshot is 1-2MB in its wire format, so that path
+                uses a tight window.
+            batch: Prune when there are ``keep_last_n + batch`` screenshots. 1 prunes before every
+                model call (see the module docstring for the prompt-caching trade-off).
         """
         super().__init__()
         self.keep_last_n = max(1, keep_last_n)
         self.max_messages = max_messages
+        self.batch = max(1, batch)
+
+    def register_hooks(self, registry, **kwargs: Any) -> None:
+        super().register_hooks(registry, **kwargs)
+        registry.add_callback(BeforeModelCallEvent, self._before_model_call)
+
+    def _before_model_call(self, event: BeforeModelCallEvent) -> None:
+        self.apply_management(event.agent)
 
     def apply_management(self, agent: "Agent", **kwargs: Any) -> None:
-        """Strip old screenshot images and trim conversation length.
-
-        1. If the conversation exceeds max_messages, drop the oldest messages
-           (keeping the first message if it's a system-like user turn).
-        2. Walk remaining messages to find image blocks. Keep only the most
-           recent `keep_last_n` screenshots; replace older ones with a text
-           placeholder.
-
-        Handles both Converse format ({"image": {...}}) and OpenAI-compat format
-        ({"type": "image_url", ...}) since Strands' OpenAI model provider creates
-        user messages with image_url blocks from tool results.
-
-        The messages list is modified in-place.
-        """
-        # ── Step 1: Sliding window on total message count ────────────
-        if self.max_messages > 0 and len(agent.messages) > self.max_messages:
-            # Keep the last max_messages messages. Drop from the front.
-            overflow = len(agent.messages) - self.max_messages
-            del agent.messages[:overflow]
-        # Collect (message_index, content_block_index) for every screenshot image
-        screenshot_locations = []
-
-        for msg_idx, message in enumerate(agent.messages):
-            role = message.get("role") if isinstance(message, dict) else None
-            if role not in ("user", "tool"):
-                continue
-
-            content = message.get("content", [])
-            if not isinstance(content, list):
-                continue
-
-            for block_idx, block in enumerate(content):
-                if not isinstance(block, dict):
-                    continue
-
-                # Converse format: {"image": {"format": "png", "source": {"bytes": ...}}}
-                if "image" in block:
-                    screenshot_locations.append((msg_idx, block_idx))
-                elif block.get("type") == "image":
-                    screenshot_locations.append((msg_idx, block_idx))
-                # OpenAI format: {"type": "image_url", "image_url": {"url": "data:..."}}
-                elif block.get("type") == "image_url":
-                    screenshot_locations.append((msg_idx, block_idx))
-
-                # Also check inside toolResult content blocks
-                if "toolResult" in block:
-                    tool_result = block["toolResult"]
-                    tr_content = tool_result.get("content", [])
-                    if isinstance(tr_content, list):
-                        for tr_idx, tr_block in enumerate(tr_content):
-                            if not isinstance(tr_block, dict):
-                                continue
-                            if "image" in tr_block or tr_block.get("type") in ("image", "image_url"):
-                                screenshot_locations.append((msg_idx, block_idx, tr_idx))
-
-        if len(screenshot_locations) <= self.keep_last_n:
-            return  # Nothing to prune
-
-        # Keep the last N, prune the rest
-        to_prune = screenshot_locations[:-self.keep_last_n]
-
-        for location in to_prune:
-            if len(location) == 2:
-                msg_idx, block_idx = location
-                agent.messages[msg_idx]["content"][block_idx] = {
-                    "text": self.PLACEHOLDER
-                }
-            elif len(location) == 3:
-                msg_idx, block_idx, tr_idx = location
-                tool_result = agent.messages[msg_idx]["content"][block_idx]["toolResult"]
-                tool_result["content"][tr_idx] = {
-                    "text": self.PLACEHOLDER
-                }
+        """Trim the history to ``max_messages``, then prune old screenshots. Edits ``agent.messages`` in place."""
+        self.removed_message_count += trim_history(agent.messages, self.max_messages)
+        prune_screenshots(agent.messages, self.keep_last_n, self.batch)
 
     def reduce_context(self, agent: "Agent", e: Exception | None = None, **kwargs: Any) -> None:
-        """Handle context window overflow by aggressively trimming.
+        """Handle a context window overflow by trimming hard.
 
-        This is called when the model's context window is exceeded (or payload
-        limit hit). We drop all but the last 4 messages, prune all screenshots,
-        and inject a progress reminder so the agent doesn't lose track of what
-        it was doing.
+        Keeps only the last few messages (starting where no tool call is cut from its result),
+        prunes every screenshot but the newest, and tells the model the history was reduced so it
+        looks at the screen instead of restarting the task.
         """
-        # Emergency: keep only the last 4 messages
-        if len(agent.messages) > 4:
-            del agent.messages[:-4]
+        self.removed_message_count += trim_history(agent.messages, 4)
+        prune_screenshots(agent.messages, 1, 1)
 
-        # Force keep only 1 screenshot
-        original = self.keep_last_n
-        self.keep_last_n = 1
-        self.apply_management(agent, **kwargs)
-        self.keep_last_n = original
-
-        # Inject a system-like reminder at the start so the agent knows
-        # context was trimmed and can re-orient from the screenshot.
-        reminder = {
-            "role": "user",
-            "content": [{
-                "text": (
-                    "[CONTEXT TRIMMED — conversation history was reduced to stay within "
-                    "payload limits. Take a screenshot to see the current desktop state, "
-                    "then continue from where you left off. Do NOT restart the task from "
-                    "the beginning.]"
-                )
-            }],
-        }
-        agent.messages.insert(0, reminder)
+        note = {"text": (
+            "[CONTEXT TRIMMED — conversation history was reduced to stay within payload limits. "
+            "Take a screenshot to see the current desktop state, then continue from where you left "
+            "off. Do NOT restart the task from the beginning.]")}
+        if agent.messages and agent.messages[0].get("role") == "user":
+            agent.messages[0]["content"].insert(0, note)      # roles must alternate: no second user message
+        else:
+            agent.messages.insert(0, {"role": "user", "content": [note]})

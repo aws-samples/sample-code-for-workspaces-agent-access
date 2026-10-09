@@ -4,11 +4,12 @@
 Strands Agent Logger - HookProvider for logging tool calls, model calls, and screenshots.
 
 This logger integrates with the Strands Agents SDK via the hooks system.
-It implements HookProvider and registers callbacks for AfterToolCallEvent
-and AfterModelCallEvent.
+It implements HookProvider and registers callbacks for BeforeToolCallEvent,
+AfterToolCallEvent, BeforeModelCallEvent and AfterModelCallEvent.
 """
 
 import base64
+import functools
 import hashlib
 import json
 import logging
@@ -50,10 +51,43 @@ def _redact_tool_input(short_name: str, tool_input: Dict[str, Any]) -> Dict[str,
     return redacted
 
 
+@functools.lru_cache(maxsize=1)
+def _string_yaml_loader():
+    """A YAML loader that leaves numbers and dates as the text they were written as.
+
+    ``version: 1.10`` must stay "1.10" (not become the float 1.1) when it is recorded as a
+    prompt version.
+    """
+    import yaml
+
+    class Loader(yaml.SafeLoader):
+        pass
+
+    keep_as_text = {"tag:yaml.org,2002:int", "tag:yaml.org,2002:float", "tag:yaml.org,2002:timestamp"}
+    Loader.yaml_implicit_resolvers = {
+        first: [(tag, pattern) for tag, pattern in rules if tag not in keep_as_text]
+        for first, rules in yaml.SafeLoader.yaml_implicit_resolvers.items()
+    }
+    return Loader
+
+
+def _parse_simple_frontmatter(text: str) -> Dict[str, str]:
+    """``key: value`` lines only: the fallback for frontmatter PyYAML cannot read."""
+    frontmatter = {}
+    for line in text.split('\n'):
+        if ':' in line:
+            key, value = line.split(':', 1)
+            frontmatter[key.strip()] = value.strip().strip('"\'')
+    return frontmatter
+
+
 def parse_prompt_frontmatter(prompt_content: str) -> tuple[str, Optional[Dict[str, str]]]:
     """
     Parse YAML frontmatter from prompt content.
     Returns (content_without_frontmatter, frontmatter_dict)
+
+    The frontmatter only labels a run's prompts in its metrics, so it must never stop a run: text
+    PyYAML cannot parse (say ``description: Draw: a dog``) falls back to a plain ``key: value`` reader.
     """
     frontmatter_pattern = r'^---\s*\n(.*?)\n---\s*\n'
     match = re.match(frontmatter_pattern, prompt_content, re.DOTALL)
@@ -66,20 +100,74 @@ def parse_prompt_frontmatter(prompt_content: str) -> tuple[str, Optional[Dict[st
 
     try:
         import yaml
-        parsed = yaml.safe_load(frontmatter_text) or {}
+        parsed = yaml.load(frontmatter_text, Loader=_string_yaml_loader()) or {}
         # Coerce to str→str dict for consumer compatibility
-        frontmatter = {str(k): str(v) for k, v in parsed.items()} if isinstance(parsed, dict) else {}
-    except ImportError:
-        # PyYAML not available — fall back to a simple key:value parser
-        frontmatter = {}
-        for line in frontmatter_text.split('\n'):
-            if ':' in line:
-                key, value = line.split(':', 1)
-                frontmatter[key.strip()] = value.strip().strip('"\'')
+        frontmatter = (
+            {str(k): str(v) for k, v in parsed.items() if v is not None} if isinstance(parsed, dict) else {}
+        )
+    except Exception:  # PyYAML missing, or the frontmatter is not valid YAML
+        frontmatter = _parse_simple_frontmatter(frontmatter_text)
 
     return content, frontmatter
 
-from strands.hooks.events import AfterModelCallEvent, AfterToolCallEvent, BeforeToolCallEvent
+from strands.hooks.events import (
+    AfterInvocationEvent,
+    AfterModelCallEvent,
+    AfterToolCallEvent,
+    BeforeInvocationEvent,
+    BeforeModelCallEvent,
+    BeforeToolCallEvent,
+)
+
+from .computer_tool import as_service_call
+from .saml_assertion import redact
+
+_MAX_ERROR_CHARS = 500   # how much of a tool's error text goes into the metrics file
+METRICS_SCHEMA_VERSION = 2   # 1 = before per-call tokens, durations and failure accounting
+
+
+def _never_raise(method):
+    """A hook callback must not break the run it observes: note the problem in the log and carry on."""
+    @functools.wraps(method)
+    def wrapper(self, event):
+        try:
+            return method(self, event)
+        except Exception as exc:
+            try:
+                self.file_logger.error(f"{method.__name__} failed: {type(exc).__name__}: {exc}")
+            except Exception:
+                pass
+    return wrapper
+
+
+def _result_text(result) -> str:
+    """The text blocks of a Strands tool result, joined."""
+    if not isinstance(result, dict):
+        return ""
+    blocks = result.get("content", [])
+    return " ".join(
+        b["text"] for b in blocks if isinstance(b, dict) and isinstance(b.get("text"), str)
+    ).strip()
+
+
+def _tool_use_name(block) -> Optional[str]:
+    """Name of the tool a message content block asks for (Strands ``toolUse``; also the raw ``tool_use`` form)."""
+    if not isinstance(block, dict):
+        return None
+    name = tool_input = None
+    if isinstance(block.get("toolUse"), dict):
+        name, tool_input = block["toolUse"].get("name"), block["toolUse"].get("input")
+    elif block.get("type") == "tool_use":
+        name, tool_input = block.get("name"), block.get("input")
+    # the same short name tool_calls[].action uses, so the two can be matched: agentaccess___click -> click
+    # (a native ``computer`` call is named for the service call it becomes)
+    return as_service_call(name, tool_input)[0] if isinstance(name, str) else None
+
+
+def _input_dict(tool_use) -> Dict[str, Any]:
+    """A tool call's input as a dict (a model can send null or a list for a tool without parameters)."""
+    tool_input = tool_use.get("input") if isinstance(tool_use, dict) else None
+    return tool_input if isinstance(tool_input, dict) else {}
 
 
 class StrandsAgentLogger:
@@ -101,6 +189,13 @@ class StrandsAgentLogger:
         self.screenshot_counter = 0
         self.iterations = 0
         self.quiet_display = quiet_display
+        # Called with (action text, succeeded, error) after every tool call; the interactive
+        # terminal (lib/terminal_ui.py) prints its action lines from it.
+        self.display_sink = None
+        self._model_call_started = None
+        self._tool_started = {}
+        self._invocation_started = None
+        self._active_seconds = 0.0
 
         # Two-line display tracking
         self.current_thinking = ""
@@ -119,6 +214,7 @@ class StrandsAgentLogger:
 
         # Metrics — same schema as MetricsLogger
         self.metrics = {
+            "schema_version": METRICS_SCHEMA_VERSION,
             "session_id": self.session_id,
             "start_time": datetime.now().isoformat(),
             "model_id": None,
@@ -127,13 +223,15 @@ class StrandsAgentLogger:
                 "system_prompt": None,
                 "task_prompt": None
             },
+            "attempts": 0,
             "tool_calls": [],
             "model_calls": [],
-            "actions_log": [],
             "total_tokens": {
                 "input": 0,
                 "output": 0,
-                "total": 0
+                "total": 0,
+                "cache_read": 0,
+                "cache_write": 0
             },
             "iterations": 0,
             "success": False,
@@ -160,10 +258,28 @@ class StrandsAgentLogger:
 
     def register_hooks(self, registry, **kwargs):
         """Register hook callbacks with the Strands agent."""
+        # One Agent per attempt: a run that reconnects and replays its task registers the same logger again.
+        self.metrics["attempts"] += 1
+        registry.add_callback(BeforeInvocationEvent, self._on_before_invocation)
+        registry.add_callback(AfterInvocationEvent, self._on_after_invocation)
         registry.add_callback(BeforeToolCallEvent, self._on_before_tool_call)
         registry.add_callback(AfterToolCallEvent, self._on_after_tool_call)
+        registry.add_callback(BeforeModelCallEvent, self._on_before_model_call)
         registry.add_callback(AfterModelCallEvent, self._on_after_model_call)
 
+    @_never_raise
+    def _on_before_invocation(self, event):
+        """Hook: an agent(...) call starts (the clock for the time actually spent working)."""
+        self._invocation_started = time.monotonic()
+
+    @_never_raise
+    def _on_after_invocation(self, event):
+        """Hook: an agent(...) call ended. A REPL spends most of its wall-clock time waiting at the prompt."""
+        if self._invocation_started is not None:
+            self._active_seconds += time.monotonic() - self._invocation_started
+            self._invocation_started = None
+
+    @_never_raise
     def _on_before_tool_call(self, event: BeforeToolCallEvent):
         """Hook: fix coordinate-param string coercion.
 
@@ -171,10 +287,10 @@ class StrandsAgentLogger:
         ("875, 27"). Coerce them to integers so the MCP server accepts them.
         """
         tool_name = event.tool_use.get("name", "")
-        short_name = tool_name.rsplit("___", 1)[-1]
-        tool_input = event.tool_use.get("input", {})
+        short_name, tool_input = as_service_call(tool_name, _input_dict(event.tool_use))
+        self._tool_started[event.tool_use.get("toolUseId")] = time.monotonic()
         changed = False
-        for key in ("x", "y", "scroll_amount"):
+        for key in ("x", "y", "start_x", "start_y", "end_x", "end_y", "scroll_amount"):
             val = tool_input.get(key)
             if val is None:
                 continue
@@ -203,20 +319,24 @@ class StrandsAgentLogger:
                 f"Fixed tool params: {json.dumps(_redact_tool_input(short_name, tool_input))}"
             )
 
+    @_never_raise
     def _on_after_tool_call(self, event: AfterToolCallEvent):
         """Hook: called after each tool invocation."""
         tool_name = event.tool_use.get("name", "unknown")
-        tool_input = event.tool_use.get("input", {})
-        error_str = str(event.exception) if event.exception else None
-        success = event.exception is None
+        error_str = self._tool_error(event)
+        success = error_str is None
+        duration = self._tool_duration(event)
 
-        short_name = tool_name.rsplit("___", 1)[-1]
+        short_name, tool_input = as_service_call(tool_name, _input_dict(event.tool_use))
 
         # Console display
         if short_name == "screenshot":
-            self.screenshot_counter += 1
-            self.show_action(f"📸 Screenshot #{self.screenshot_counter}")
-            self._save_screenshot(event.result)
+            if success:  # a failed screenshot (say "dcv session not ready") produced no image
+                self.screenshot_counter += 1
+                self.show_action(f"📸 Screenshot #{self.screenshot_counter}")
+                self._save_screenshot(event.result)
+            else:
+                self.show_action("📸 Screenshot failed")
         elif short_name == "left_click":
             self.show_action(f"🖱️ Click ({tool_input.get('x')},{tool_input.get('y')})")
         elif short_name == "double_click":
@@ -241,47 +361,41 @@ class StrandsAgentLogger:
             keys = tool_input.get('keys') or []
             self.show_action(f"⌨️ key ({len(keys) if isinstance(keys, list) else 1} keys)")
         elif short_name == "hold_key":
-            self.show_action(f"⌨️ hold_key ({tool_input.get('duration', '?')}s)")
+            self.show_action(f"⌨️ hold_key ({tool_input.get('duration', tool_input.get('seconds', '?'))}s)")
         elif short_name == "scroll":
-            self.show_action(f"🖱️ Scroll {tool_input.get('scroll_direction')}")
-        elif short_name == "drag":
-            self.show_action(
-                f"🖱️ Drag ({tool_input.get('start_x')},{tool_input.get('start_y')}) → "
-                f"({tool_input.get('end_x')},{tool_input.get('end_y')})"
-            )
+            self.show_action(f"🖱️ Scroll {tool_input.get('scroll_direction')} {tool_input.get('scroll_amount', '')}".rstrip())
         elif short_name == "left_click_drag":
-            # Anthropic schema uses `coordinate` (end point) + `start_coordinate`.
-            start = tool_input.get('start_coordinate') or []
-            end = tool_input.get('coordinate') or []
-            start_s = f"({start[0]},{start[1]})" if len(start) == 2 else "(?)"
-            end_s = f"({end[0]},{end[1]})" if len(end) == 2 else "(?)"
+            # The service takes start_x/start_y/end_x/end_y; Anthropic's computer tool uses
+            # `start_coordinate` + `coordinate` (the end point).
+            start = tool_input.get('start_coordinate') or [tool_input.get('start_x'), tool_input.get('start_y')]
+            end = tool_input.get('coordinate') or [tool_input.get('end_x'), tool_input.get('end_y')]
+            start_s = f"({start[0]},{start[1]})" if len(start) == 2 and None not in start else "(?)"
+            end_s = f"({end[0]},{end[1]})" if len(end) == 2 and None not in end else "(?)"
             self.show_action(f"🖱️ Drag {start_s} → {end_s}")
         elif short_name == "move_pointer":
             self.show_action(f"🖱️ Move ({tool_input.get('x')},{tool_input.get('y')})")
         elif short_name == "wait":
-            self.show_action(f"⏳ wait ({tool_input.get('duration', '?')}s)")
+            self.show_action(f"⏳ wait ({tool_input.get('seconds', tool_input.get('duration', '?'))}s)")
+        elif short_name == "launch_application":
+            self.show_action(f"🚀 Launch {tool_input.get('id', '?')}")
+        elif short_name == "get_session_info":
+            self.show_action("ℹ️ Session info")
+        elif short_name == "toggle_app_switcher":
+            self.show_action("🗂️ App switcher")
         else:
             self.show_action(f"🔧 {tool_name}")
+        if self.display_sink is not None:
+            self.display_sink(self.current_action, success, error_str)
 
         redacted_input = _redact_tool_input(short_name, tool_input)
 
         # File log — redacted params so passwords don't leak to the debug log.
         self.file_logger.debug(
-            f"Tool Call: dcv.{tool_name} | Duration: 0.000s | "
+            f"Tool Call: dcv.{tool_name} | Duration: {duration:.3f}s | "
             f"Success: {success} | Params: {json.dumps(redacted_input)[:200]}"
         )
         if error_str:
             self.file_logger.error(f"Tool Error: {error_str}")
-            # Detect permanently dead MCP connection (e.g. agent disable).
-            # If the same connection error repeats 5+ times, raise to break the loop.
-            if "client session is not running" in error_str.lower() or "connection to the mcp server was closed" in error_str.lower():
-                self._consecutive_mcp_failures = getattr(self, '_consecutive_mcp_failures', 0) + 1
-                if self._consecutive_mcp_failures >= 5:
-                    raise RuntimeError("MCP connection permanently lost (5 consecutive failures). Session may have been disabled.")
-            else:
-                self._consecutive_mcp_failures = 0
-        else:
-            self._consecutive_mcp_failures = 0
         if short_name != "screenshot":
             status = "✓" if success else "✗"
             self.file_logger.info(f"{status} {tool_name}")
@@ -292,42 +406,114 @@ class StrandsAgentLogger:
             "tool_name": "dcv",
             "action": short_name,
             "params": redacted_input,
-            "duration_seconds": 0,
+            "duration_seconds": duration,
             "success": success,
             "error": error_str
         })
 
+    def _tool_duration(self, event) -> float:
+        """Seconds the tool ran: Strands' figure, else timed here (older Strands; 0 if it never ran)."""
+        started = self._tool_started.pop(event.tool_use.get("toolUseId"), None)
+        duration = getattr(event, "duration", None)
+        if duration is None and not hasattr(event, "duration") and started is not None:
+            duration = time.monotonic() - started
+        return round(duration or 0.0, 3)
+
+    @staticmethod
+    def _tool_error(event) -> Optional[str]:
+        """Why a tool call failed, or None if it worked.
+
+        A tool fails by raising (``event.exception``), by being cancelled before it ran, or - the
+        usual case for an MCP tool, which Strands wraps so that it never raises - by returning a
+        result whose ``status`` is ``"error"``. Only the first was counted before, so every
+        failed desktop action was logged as a success.
+        """
+        if event.exception is not None:
+            text = str(event.exception) or type(event.exception).__name__
+        elif getattr(event, "cancel_message", None):
+            text = f"cancelled: {event.cancel_message}"
+        elif isinstance(event.result, dict) and event.result.get("status") == "error":
+            text = _result_text(event.result) or "tool returned status=error"
+        else:
+            return None
+        return redact(text)[:_MAX_ERROR_CHARS]
+
+    @_never_raise
+    def _on_before_model_call(self, event: BeforeModelCallEvent):
+        """Hook: remember when the model call started."""
+        self._model_call_started = time.monotonic()
+
+    @_never_raise
     def _on_after_model_call(self, event: AfterModelCallEvent):
         """Hook: called after each model invocation."""
-        self.iterations += 1
-        self.metrics["iterations"] = self.iterations
+        started, self._model_call_started = self._model_call_started, None
+        duration = round(time.monotonic() - started, 3) if started is not None else 0.0
 
         stop_reason = "unknown"
         tools_used = []
+        usage = {}
+        error = None
 
         if event.stop_response:
             stop_reason = str(event.stop_response.stop_reason)
             msg = event.stop_response.message
 
-            # Extract tool names from message content
             content = msg.get("content", []) if isinstance(msg, dict) else getattr(msg, 'content', [])
             if isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "tool_use":
-                        name = block.get("name")
-                        if name:
-                            tools_used.append(name)
-        elif event.exception:
-            stop_reason = f"error: {event.exception}"
-            self.file_logger.error(f"Model error: {event.exception}")
+                tools_used = [name for name in map(_tool_use_name, content) if name]
 
-        self.metrics["model_calls"].append({
+            # Strands attaches this call's usage to the message before the hook runs.
+            metadata = msg.get("metadata") if isinstance(msg, dict) else None
+            usage = (metadata or {}).get("usage") or {}
+        elif event.exception:
+            stop_reason = "error"
+            error = redact(str(event.exception) or type(event.exception).__name__)[:_MAX_ERROR_CHARS]
+            self.file_logger.error(f"Model error: {error}")
+
+        # An attempt that raised, or whose response a hook threw away to retry, is not a model
+        # call the run made progress with: keep the record, flagged, but leave it out of the counts.
+        failed = event.exception is not None
+        retried = bool(getattr(event, "retry", False))
+        if not failed and not retried:
+            self.iterations += 1
+            self.metrics["iterations"] = self.iterations
+
+        input_tokens = int(usage.get("inputTokens") or 0)
+        output_tokens = int(usage.get("outputTokens") or 0)
+        total_tokens = int(usage.get("totalTokens") or (input_tokens + output_tokens))
+        cache_read = int(usage.get("cacheReadInputTokens") or 0)
+        cache_write = int(usage.get("cacheWriteInputTokens") or 0)
+
+        totals = self.metrics["total_tokens"]   # tokens of a discarded response were still billed
+        totals["input"] += input_tokens
+        totals["output"] += output_tokens
+        totals["total"] += total_tokens
+        totals["cache_read"] += cache_read
+        totals["cache_write"] += cache_write
+
+        call = {
             "timestamp": datetime.now().isoformat(),
             "stop_reason": stop_reason,
-            "tools_used": tools_used
-        })
+            "tools_used": tools_used,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "cache_read_tokens": cache_read,
+            "cache_write_tokens": cache_write,
+            "duration_seconds": duration
+        }
+        if failed:
+            call["failed"] = True
+            call["error"] = error
+        if retried:
+            call["retried"] = True
+        self.metrics["model_calls"].append(call)
 
-        self.file_logger.debug(f"Model Call: stop_reason={stop_reason} tools={tools_used}")
+        self.file_logger.debug(
+            f"Model Call: stop_reason={stop_reason} tools={tools_used} "
+            f"tokens={input_tokens}+{output_tokens} cache={cache_read}/{cache_write} duration={duration:.3f}s"
+            + (" FAILED" if failed else " RETRIED" if retried else "")
+        )
 
     # --- Screenshot saving ---
 
@@ -420,28 +606,40 @@ class StrandsAgentLogger:
         self.metrics["duration_seconds"] = round(time.time() - self.start_time, 2)
         self.metrics["end_time"] = datetime.now().isoformat()
 
-        # Pull token usage from Strands AgentResult.metrics.accumulated_usage
-        if agent_result and hasattr(agent_result, 'metrics'):
-            usage = getattr(agent_result.metrics, 'accumulated_usage', {})
-            self.metrics["total_tokens"] = {
+        # Token totals were summed per model call. Fall back to the Strands AgentResult when the
+        # model calls carried no usage (an older Strands, or a model that does not report it).
+        totals = self.metrics["total_tokens"]
+        if not totals["total"] and agent_result is not None and hasattr(agent_result, 'metrics'):
+            usage = getattr(agent_result.metrics, 'accumulated_usage', None) or {}
+            totals.update({
                 "input": usage.get("inputTokens", 0),
                 "output": usage.get("outputTokens", 0),
-                "total": usage.get("totalTokens", 0)
-            }
+                "total": usage.get("totalTokens", 0),
+                "cache_read": usage.get("cacheReadInputTokens", 0),
+                "cache_write": usage.get("cacheWriteInputTokens", 0),
+            })
 
         tc = self.metrics["tool_calls"]
-        cc = self.metrics["model_calls"]
-        total_tokens = self.metrics["total_tokens"]["total"]
+        cc = [c for c in self.metrics["model_calls"] if not c.get("failed") and not c.get("retried")]
+        total_tokens = totals["total"]
+        active = round(self._active_seconds, 2)
+        self.metrics["active_seconds"] = active
         self.metrics["summary"] = {
             "total_tool_calls": len(tc),
+            "failed_tool_calls": sum(1 for t in tc if not t["success"]),
+            "total_screenshots": self.screenshot_counter,
             "total_model_calls": len(cc),
-            "total_actions": len(self.metrics["actions_log"]),
+            "failed_model_calls": sum(1 for c in self.metrics["model_calls"] if c.get("failed")),
             "avg_tool_duration": round(
                 sum(t["duration_seconds"] for t in tc) / len(tc) if tc else 0, 3
             ),
+            "avg_model_duration": round(
+                sum(c["duration_seconds"] for c in cc) / len(cc) if cc else 0, 3
+            ),
+            # per second of work, not of wall-clock: a REPL waits at its prompt between tasks
             "tokens_per_second": round(
-                total_tokens / self.metrics["duration_seconds"]
-                if self.metrics["duration_seconds"] > 0 else 0, 2
+                total_tokens / (active or self.metrics["duration_seconds"])
+                if (active or self.metrics["duration_seconds"]) > 0 else 0, 2
             ),
             "tool_success_rate": round(
                 sum(1 for t in tc if t["success"]) / len(tc) * 100 if tc else 0, 2

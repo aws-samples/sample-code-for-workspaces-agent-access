@@ -255,12 +255,12 @@ separator "Step 7/7: Running demo agent"
 
 source "$PROJECT_ROOT/venv/bin/activate"
 
-info "Starting pdf_extractor_demo..."
+info "Starting application_validation..."
 info "Press Ctrl+C to stop."
 echo ""
 
 if [ -n "${STREAMING_URL:-}" ]; then
-  python3 "$PROJECT_ROOT/agents/pdf_extractor_demo/agent.py" \
+  python3 "$PROJECT_ROOT/agents/application_validation/agent.py" \
     --streaming-url "$STREAMING_URL"
 else
   echo ""
@@ -271,6 +271,6 @@ else
   echo "    --user-id testuser --validity 3600 \\"
   echo "    --query StreamingURL --output text"
   echo ""
-  echo "  python3 agents/pdf_extractor_demo/agent.py --streaming-url '<URL>'"
+  echo "  python3 agents/application_validation/agent.py --streaming-url '<URL>'"
   echo ""
 fi
