@@ -24,7 +24,7 @@ aws-bedrock-token-generator==1.1.0
     # via strands-agents
 awscrt==0.31.2
     # via botocore
-backports-tarfile==1.2.0 ; python_full_version < '3.12'
+backports-tarfile==1.2.0
     # via jaraco-context
 beartype==0.22.9
     # via py-key-value-aio
@@ -33,7 +33,7 @@ boto3==1.42.93
     #   -r requirements.in
     #   mcp-proxy-for-aws
     #   strands-agents
-botocore==1.42.94
+botocore[crt]==1.42.94
     # via
     #   aws-bedrock-token-generator
     #   boto3
@@ -48,14 +48,10 @@ certifi==2026.4.22
     # via
     #   httpcore
     #   httpx
-cffi==2.0.0 ; platform_python_implementation != 'PyPy'
+cffi==2.0.0
     # via cryptography
 click==8.3.3
     # via uvicorn
-colorama==0.4.6 ; sys_platform == 'win32'
-    # via
-    #   click
-    #   tqdm
 cryptography==48.0.1
     # via
     #   authlib
@@ -114,7 +110,7 @@ jaraco-context==6.1.2
     # via keyring
 jaraco-functools==4.4.0
     # via keyring
-jeepney==0.9.0 ; sys_platform == 'linux'
+jeepney==0.9.0
     # via
     #   keyring
     #   secretstorage
@@ -185,11 +181,11 @@ platformdirs==4.9.6
     # via fastmcp
 prompt-toolkit==3.0.53
     # via -r requirements.in
-py-key-value-aio==0.4.4
+py-key-value-aio[filetree,keyring,memory]==0.4.4
     # via fastmcp
-pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+pycparser==3.0
     # via cffi
-pydantic==2.13.3
+pydantic[email]==2.13.3
     # via
     #   fastmcp
     #   mcp
@@ -203,7 +199,7 @@ pydantic-settings==2.14.0
     # via mcp
 pygments==2.20.0
     # via rich
-pyjwt==2.13.0
+pyjwt[crypto]==2.15.0
     # via mcp
 pyperclip==1.11.0
     # via fastmcp
@@ -215,10 +211,6 @@ python-dotenv==1.2.2
     #   pydantic-settings
 python-multipart==0.0.31
     # via mcp
-pywin32==311 ; sys_platform == 'win32'
-    # via mcp
-pywin32-ctypes==0.2.3 ; sys_platform == 'win32'
-    # via keyring
 pyyaml==6.0.3
     # via
     #   fastmcp
@@ -243,7 +235,7 @@ rpds-py==0.30.0
     #   referencing
 s3transfer==0.16.1
     # via boto3
-secretstorage==3.5.0 ; sys_platform == 'linux'
+secretstorage==3.5.0
     # via keyring
 six==1.17.0
     # via python-dateutil
@@ -255,9 +247,9 @@ starlette==1.3.1
     # via
     #   mcp
     #   sse-starlette
-strands-agents==1.57.1
+strands-agents[openai]==1.57.1
     # via -r requirements.in
-tomli==2.5.0 ; python_full_version < '3.11'
+tomli==2.5.0
     # via cyclopts
 tqdm==4.67.3
     # via openai
