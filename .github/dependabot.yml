@@ -3,12 +3,17 @@
 # updater regenerates it that way. The pip updater would rerun pip-compile, which drops the
 # Windows-only and Python-version-gated pins.
 #
-# Version updates run weekly and security updates as advisories appear. Before merging one, check
-# that its requirements.txt still has the `sys_platform == 'win32'` and `python_full_version` lines
-# and the `uv pip compile --universal` header.
+# Version updates run weekly and cover every locked package, not only the ones requirements.in
+# names (allow: dependency-type: all), so fixes in indirect dependencies (urllib3, pyjwt, ...) arrive
+# here too. Before merging one, check that its requirements.txt still has the
+# `sys_platform == 'win32'` and `python_full_version` lines and the `uv pip compile --universal`
+# header, and bump the matching pins in scripts/deploy_agentcore.sh (strands-agents, mcp, boto3,
+# mcp-proxy-for-aws), which Dependabot does not edit.
 version: 2
 updates:
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
+    allow:
+      - dependency-type: "all"
