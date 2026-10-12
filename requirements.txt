@@ -28,7 +28,7 @@ backports-tarfile==1.2.0 ; python_full_version < '3.12'
     # via jaraco-context
 beartype==0.22.9
     # via py-key-value-aio
-boto3==1.43.108
+boto3==1.43.110
     # via
     #   -r requirements.in
     #   mcp-proxy-for-aws
