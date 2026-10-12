@@ -17,3 +17,12 @@ updates:
       interval: "weekly"
     allow:
       - dependency-type: "all"
+    ignore:
+      # pydantic pins pydantic-core exactly, so pydantic updates bring it along; a pydantic-core
+      # update on its own forces whichever pydantic pins that version, even a pre-release.
+      - dependency-name: "pydantic-core"
+    groups:
+      # The OpenTelemetry packages pin each other and move together: one PR instead of one per package.
+      opentelemetry:
+        patterns:
+          - "opentelemetry-*"
