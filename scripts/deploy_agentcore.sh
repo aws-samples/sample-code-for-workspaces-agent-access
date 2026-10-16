@@ -493,7 +493,7 @@ if [ -f "$APP_DIR/pyproject.toml" ]; then
   for dep in \
     "mcp-proxy-for-aws==1.7.0" \
     "strands-agents==1.58.1" \
-    "mcp==1.28.1" \
+    "mcp==1.30.0" \
     "boto3==1.43.110" \
   ; do
     uv add --quiet "$dep" || fail "Could not pin $dep in the AgentCore project (uv add failed)"
