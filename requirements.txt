@@ -18,7 +18,7 @@ attrs==26.1.0
     #   cyclopts
     #   jsonschema
     #   referencing
-authlib==1.7.1
+authlib==1.8.0
     # via fastmcp
 aws-bedrock-token-generator==1.1.0
     # via strands-agents
