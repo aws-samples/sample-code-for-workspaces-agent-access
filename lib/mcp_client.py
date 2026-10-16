@@ -212,9 +212,10 @@ def create_mcp_client_factory(args, root_dir=None):
         def http_client_factory(headers=None, timeout=None, auth=None):
             client = create_mcp_http_client(
                 headers=headers, timeout=timeout, auth=DomainJoinAuth(auth, meta))
-            # mcp 1.27 follows redirects inside a single auth pass: a 307 would replay the
-            # assertion to wherever Location points, and with a signature that no longer
-            # matches. The endpoint does not redirect, so refuse to follow.
+            # mcp before 1.30 followed redirects inside a single auth pass: a 307 would replay
+            # the assertion to wherever Location points, and with a signature that no longer
+            # matches. 1.30 follows same-origin redirects only; the endpoint does not redirect,
+            # so refuse to follow any.
             client.follow_redirects = False
             return client
 
