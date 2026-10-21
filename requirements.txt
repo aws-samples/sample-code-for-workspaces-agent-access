@@ -263,7 +263,7 @@ tomli==2.5.0 ; python_full_version < '3.11'
     # via cyclopts
 tqdm==4.67.3
     # via openai
-typing-extensions==4.15.0
+typing-extensions==4.16.0
     # via
     #   anyio
     #   cryptography
