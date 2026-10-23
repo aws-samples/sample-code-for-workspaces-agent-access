@@ -18,6 +18,8 @@ agents/*/metrics/*
 !agents/*/metrics/.gitkeep
 agents/*/screenshots/*
 !agents/*/screenshots/.gitkeep
+agents/*/recordings/*
+!agents/*/recordings/.gitkeep
 reports/*
 !reports/.gitkeep
 .agentcore-build/

@@ -1,0 +1,68 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Replay Session - Computer Use Agent Skill",
+    "version": "1.0.0",
+    "description": "Instructions for a computer use agent working on an Amazon WorkSpaces Applications stack with Replay Session (ReplaySessionEnabled) turned on, where every desktop action is recorded for later review."
+  },
+  "servers": [
+    {
+      "url": "desktop://localhost",
+      "description": "Windows Desktop on a stack with Replay Session enabled"
+    }
+  ],
+  "paths": {
+    "/replay/identify-session": {
+      "post": {
+        "summary": "Find the ID that names this session's recording",
+        "operationId": "identifyReplaySession",
+        "x-agent-instructions": {
+          "steps": [
+            "Call get_session_info.",
+            "Report the mcpSessionId field: the recording is delivered under agentaccess/replay-session/year=YYYY/month=MM/day=DD/<mcpSessionId>/ in the stack's S3 bucket."
+          ],
+          "tips": [
+            "get_session_info is read-only and is not captured as a frame in the recording.",
+            "The workSpacesSessionId field is the streaming session, not the recording's folder name."
+          ],
+          "verification": "You can state the mcpSessionId."
+        }
+      }
+    },
+    "/replay/act": {
+      "post": {
+        "summary": "Take desktop actions on a recorded stack",
+        "operationId": "actOnRecordedStack",
+        "x-agent-instructions": {
+          "steps": [
+            "Plan the next action, then take it once.",
+            "Take a screenshot only when you need to see the result."
+          ],
+          "tips": [
+            "Each desktop action is captured before it runs: the screen plus the exact tool call and arguments.",
+            "Everything you type is kept in the transcript. Never type passwords, tokens or other secrets.",
+            "A short, deliberate sequence of actions produces a clearer audit trail than trial and error."
+          ],
+          "verification": "Each action returned a success result."
+        }
+      }
+    },
+    "/replay/blocked-action": {
+      "post": {
+        "summary": "Handle an action blocked by Replay Session",
+        "operationId": "handleBlockedAction",
+        "x-agent-instructions": {
+          "steps": [
+            "If a tool result starts with 'Replay Session enabled but action blocked', the action did not run.",
+            "Report the full message, including any KMS error code and operation it names, and stop."
+          ],
+          "tips": [
+            "Capture is fail-closed: an action that cannot be recorded is rejected rather than run unrecorded.",
+            "A message naming a KMS error means the stack's KmsKeyArn cannot be used; retrying the same action will fail again until the key policy is fixed."
+          ],
+          "verification": "You reported the blocking message instead of retrying."
+        }
+      }
+    }
+  }
+}

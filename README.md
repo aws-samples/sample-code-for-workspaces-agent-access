@@ -59,7 +59,22 @@ python3 agents/generic_cua/agent.py --streaming-url "$STREAMING_URL"
 
 # MCP tool forwarding — uses forwarded filesystem + fetch tools (requires a forwarding fleet)
 python3 agents/mcp_forwarding_demo/agent.py --streaming-url "$STREAMING_URL"
+
+# Replay Session — records the session, then downloads the recording (requires Replay Session on the stack)
+python3 agents/replay_session_demo/agent.py --streaming-url "$STREAMING_URL"
 ```
+
+### Replay Session
+
+Stacks can record an agent's session with Replay Session: before each desktop action, the service captures the screen with the exact tool call and its arguments, and after the session ends it delivers a video, a transcript, and an HTML report to your own S3 bucket under `agentaccess/replay-session/year=YYYY/month=MM/day=DD/<mcpSessionId>/`.
+
+To turn it on for the stack that `setup.sh` deploys:
+
+```bash
+./scripts/setup_replay_session.sh --region us-east-1
+```
+
+Then `agents/replay_session_demo/` runs a short task, waits for the recording, downloads it, and prints the transcript. See [`agents/replay_session_demo/README.md`](agents/replay_session_demo/README.md).
 
 ### MCP tool forwarding
 
