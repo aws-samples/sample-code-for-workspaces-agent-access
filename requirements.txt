@@ -19,12 +19,12 @@ attrs==26.1.0
     #   jsonschema
     #   referencing
 authlib==1.9.1
-    # via fastmcp
+    # via fastmcp-slim
 aws-bedrock-token-generator==1.1.0
     # via strands-agents
 awscrt==0.36.0
     # via botocore
-backports-tarfile==1.2.0 ; python_full_version < '3.12'
+backports-tarfile==1.2.0
     # via jaraco-context
 beartype==0.22.9
     # via py-key-value-aio
@@ -33,7 +33,7 @@ boto3==1.43.110
     #   -r requirements.in
     #   mcp-proxy-for-aws
     #   strands-agents
-botocore==1.43.111
+botocore[crt]==1.43.111
     # via
     #   aws-bedrock-token-generator
     #   boto3
@@ -48,14 +48,10 @@ certifi==2026.4.22
     # via
     #   httpcore
     #   httpx
-cffi==2.1.1 ; platform_python_implementation != 'PyPy'
+cffi==2.1.1
     # via cryptography
 click==8.3.3
     # via uvicorn
-colorama==0.4.6 ; sys_platform == 'win32'
-    # via
-    #   click
-    #   tqdm
 cryptography==50.0.2
     # via
     #   authlib
@@ -63,7 +59,7 @@ cryptography==50.0.2
     #   pyjwt
     #   secretstorage
 cyclopts==4.11.0
-    # via fastmcp
+    # via fastmcp-slim
 distro==1.9.0
     # via openai
 dnspython==2.8.0
@@ -79,11 +75,13 @@ email-validator==2.3.0
 exceptiongroup==1.3.1
     # via
     #   anyio
-    #   fastmcp
-fastmcp==3.2.4
+    #   fastmcp-slim
+fastmcp==3.4.10
     # via mcp-proxy-for-aws
-griffelib==2.0.2
+fastmcp-slim[client,server]==3.4.10
     # via fastmcp
+griffelib==2.0.2
+    # via fastmcp-slim
 h11==0.16.0
     # via
     #   httpcore
@@ -92,7 +90,7 @@ httpcore==1.0.9
     # via httpx
 httpx==0.28.1
     # via
-    #   fastmcp
+    #   fastmcp-slim
     #   mcp
     #   mcp-proxy-for-aws
     #   openai
@@ -104,7 +102,7 @@ idna==3.15
     #   anyio
     #   email-validator
     #   httpx
-importlib-metadata==8.7.1 ; python_full_version < '3.12'
+importlib-metadata==8.7.1
     # via keyring
 jaraco-classes==3.4.0
     # via keyring
@@ -112,7 +110,7 @@ jaraco-context==6.1.2
     # via keyring
 jaraco-functools==4.4.0
     # via keyring
-jeepney==0.9.0 ; sys_platform == 'linux'
+jeepney==0.9.0
     # via
     #   keyring
     #   secretstorage
@@ -123,15 +121,17 @@ jmespath==1.1.0
     #   boto3
     #   botocore
 joserfc==1.6.8
-    # via authlib
+    # via
+    #   authlib
+    #   fastmcp-slim
 jsonref==1.1.0
-    # via fastmcp
+    # via fastmcp-slim
 jsonschema==4.26.0
     # via
     #   mcp
     #   strands-agents
 jsonschema-path==0.4.5
-    # via fastmcp
+    # via fastmcp-slim
 jsonschema-specifications==2025.9.1
     # via jsonschema
 keyring==25.7.0
@@ -141,7 +141,7 @@ markdown-it-py==4.2.0
 mcp==1.30.0
     # via
     #   -r requirements.in
-    #   fastmcp
+    #   fastmcp-slim
     #   strands-agents
 mcp-proxy-for-aws==1.7.0
     # via -r requirements.in
@@ -154,10 +154,10 @@ more-itertools==11.0.2
 openai==2.35.1
     # via strands-agents
 openapi-pydantic==0.5.1
-    # via fastmcp
+    # via fastmcp-slim
 opentelemetry-api==1.45.1
     # via
-    #   fastmcp
+    #   fastmcp-slim
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-threading
     #   opentelemetry-sdk
@@ -175,21 +175,21 @@ opentelemetry-semantic-conventions==0.66b1
     #   opentelemetry-sdk
 packaging==26.3
     # via
-    #   fastmcp
+    #   fastmcp-slim
     #   opentelemetry-instrumentation
 pathable==0.5.0
     # via jsonschema-path
 platformdirs==4.9.6
-    # via fastmcp
+    # via fastmcp-slim
 prompt-toolkit==3.0.53
     # via -r requirements.in
-py-key-value-aio==0.4.4
-    # via fastmcp
-pycparser==3.11 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+py-key-value-aio[filetree,keyring,memory]==0.4.4
+    # via fastmcp-slim
+pycparser==3.11
     # via cffi
-pydantic==2.13.3
+pydantic[email]==2.13.3
     # via
-    #   fastmcp
+    #   fastmcp-slim
     #   mcp
     #   openai
     #   openapi-pydantic
@@ -198,28 +198,28 @@ pydantic==2.13.3
 pydantic-core==2.46.3
     # via pydantic
 pydantic-settings==2.14.2
-    # via mcp
+    # via
+    #   fastmcp-slim
+    #   mcp
 pygments==2.20.0
     # via rich
-pyjwt==2.15.1
+pyjwt[crypto]==2.15.1
     # via mcp
 pyperclip==1.11.0
-    # via fastmcp
+    # via fastmcp-slim
 python-dateutil==2.9.0.post0
     # via botocore
 python-dotenv==1.2.4
     # via
-    #   fastmcp
+    #   fastmcp-slim
     #   pydantic-settings
 python-multipart==0.0.31
-    # via mcp
-pywin32==311 ; sys_platform == 'win32'
-    # via mcp
-pywin32-ctypes==0.2.3 ; sys_platform == 'win32'
-    # via keyring
+    # via
+    #   fastmcp-slim
+    #   mcp
 pyyaml==6.0.3
     # via
-    #   fastmcp
+    #   fastmcp-slim
     #   jsonschema-path
     #   strands-agents
 referencing==0.37.0
@@ -231,7 +231,7 @@ rich==15.0.0
     # via
     #   -r requirements.in
     #   cyclopts
-    #   fastmcp
+    #   fastmcp-slim
     #   rich-rst
 rich-rst==1.3.2
     # via cyclopts
@@ -241,7 +241,7 @@ rpds-py==0.30.0
     #   referencing
 s3transfer==0.19.2
     # via boto3
-secretstorage==3.5.0 ; sys_platform == 'linux'
+secretstorage==3.5.0
     # via keyring
 six==1.17.0
     # via python-dateutil
@@ -249,17 +249,14 @@ sniffio==1.3.1
     # via openai
 sse-starlette==3.3.4
     # via mcp
-starlette==1.7.0 ; python_full_version < '3.11'
+starlette==1.7.0
     # via
+    #   fastmcp-slim
     #   mcp
     #   sse-starlette
-starlette==1.8.0 ; python_full_version >= '3.11'
-    # via
-    #   mcp
-    #   sse-starlette
-strands-agents==1.58.1
+strands-agents[openai]==1.58.1
     # via -r requirements.in
-tomli==2.5.0 ; python_full_version < '3.11'
+tomli==2.5.0
     # via cyclopts
 tqdm==4.67.3
     # via openai
@@ -269,6 +266,7 @@ typing-extensions==4.16.0
     #   cryptography
     #   cyclopts
     #   exceptiongroup
+    #   fastmcp-slim
     #   mcp
     #   openai
     #   opentelemetry-api
@@ -289,24 +287,24 @@ typing-inspection==0.4.2
     #   pydantic
     #   pydantic-settings
 uncalled-for==0.3.1
-    # via fastmcp
+    # via fastmcp-slim
 urllib3==2.8.0
     # via botocore
 uvicorn==0.46.0
     # via
-    #   fastmcp
+    #   fastmcp-slim
     #   mcp
 watchdog==6.0.0
     # via strands-agents
 watchfiles==1.3.0
-    # via fastmcp
+    # via fastmcp-slim
 wcwidth==0.9.2
     # via prompt-toolkit
 websockets==16.0
-    # via fastmcp
+    # via fastmcp-slim
 wrapt==2.5.1
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-threading
-zipp==3.23.1 ; python_full_version < '3.12'
+zipp==3.23.1
     # via importlib-metadata
