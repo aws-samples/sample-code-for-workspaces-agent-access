@@ -173,7 +173,7 @@ opentelemetry-semantic-conventions==0.66b1
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-sdk
-packaging==26.1
+packaging==26.3
     # via
     #   fastmcp
     #   opentelemetry-instrumentation
