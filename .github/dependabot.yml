@@ -7,8 +7,9 @@
 # names (allow: dependency-type: all), so fixes in indirect dependencies (urllib3, pyjwt, ...) arrive
 # here too. Before merging one, check that its requirements.txt still has the
 # `sys_platform == 'win32'` and `python_full_version` lines and the `uv pip compile --universal`
-# header, and bump the matching pins in scripts/deploy_agentcore.sh (strands-agents, mcp, boto3,
-# mcp-proxy-for-aws), which Dependabot does not edit.
+# header, and bump the matching pins in scripts/deploy_agentcore.sh (strands-agents, mcp, httpx2,
+# boto3), which Dependabot does not edit. For a strands-agents bump, also check the strands internals
+# lib/mcp_client.py patches (it fails at import if they changed).
 version: 2
 updates:
   - package-ecosystem: "uv"

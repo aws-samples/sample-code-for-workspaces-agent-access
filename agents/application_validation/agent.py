@@ -22,6 +22,8 @@ def main():
         ),
         skill_filename="application-validation-skill.json",
         skill_label="APPLICATION VALIDATION SKILL",
+        # Stays on stateful MCP, so the repo keeps a stateful sample (quickstart.py and generic_cua are stateless).
+        mcp_protocol=agent_common.MCP_PROTOCOL_STATEFUL,
     )
 
 

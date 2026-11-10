@@ -33,6 +33,7 @@ from rich.text import Text
 from strands.hooks import BeforeModelCallEvent, BeforeToolCallEvent
 
 from .computer_tool import as_service_call
+from .mcp_client import close_stateless_sessions
 
 EXIT_WORDS = ("exit", "quit", "/exit", "/quit")
 HELP = """\
@@ -276,6 +277,9 @@ class TerminalUI:
         if name == "/help":
             self.console.print(Markdown(HELP))
         elif name == "/clear":
+            # Stateless MCP: the mcpSessionId lives only in the conversation, so close the session before the
+            # model forgets it. Otherwise the next task opens a second session with NEW while this one stays open.
+            close_stateless_sessions()
             agent.messages.clear()
             self.console.print(Text("Started a new conversation. The desktop is as it was.", style="dim"))
         elif name == "/status":

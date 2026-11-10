@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: MIT-0
 """Retry logic and error handling for MCP agent connections."""
 
+import re
 import sys
 import time
 
-import httpx
-from mcp.shared.exceptions import McpError
+import httpx2
+from mcp.shared.exceptions import MCPError
 
 from .agent_factory import (AUTH_SAML, DomainJoinRejected, RunInterrupted, RunLimitReached, agent_hooks,
                             agent_options, get_auth_mode, make_agent)
@@ -21,6 +22,7 @@ SAML_RETRY_WINDOW_SECONDS = 4 * 60
 # a stack ARN from another account, missing IAM permissions.
 _SAML_NON_RETRYABLE_STATUSES = (400, 401, 403)
 _MAX_SERVICE_MESSAGE = 500   # characters of a service error body worth printing
+_HTTP_STATUS = re.compile(r"HTTP ([45]\d\d) ")
 
 
 def _is_retryable_error(error_str):
@@ -77,11 +79,16 @@ def find_http_rejection(error):
         seen.add(id(current))
         if isinstance(current, DomainJoinRejected):
             return current.status, current.message
-        if isinstance(current, McpError) and 400 <= current.error.code <= 599:
-            # mcp-proxy-for-aws answers a failed POST with a JSON-RPC error whose code is the
-            # HTTP status and whose message is "HTTP 400 Bad Request from <url>: <body>".
-            return current.error.code, current.error.message
-        if isinstance(current, httpx.HTTPStatusError):
+        if isinstance(current, MCPError):
+            # lib/mcp_client.py answers a failed POST with a JSON-RPC error whose message is
+            # "HTTP 400 Bad Request from <url>: <body>"; its code is the HTTP status, or the
+            # service's own JSON-RPC code when the body was a JSON-RPC error.
+            if 400 <= current.error.code <= 599:
+                return current.error.code, current.error.message
+            status = _HTTP_STATUS.match(current.error.message or "")
+            if status:
+                return int(status.group(1)), current.error.message
+        if isinstance(current, httpx2.HTTPStatusError):
             response = current.response
             try:
                 body = response.text.strip()

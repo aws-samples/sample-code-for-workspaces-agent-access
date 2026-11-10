@@ -11,19 +11,18 @@ that assertion expires.
 
 Order matters. The request body is covered by the SigV4 signature (the payload hash and
 ``Content-Length``), so ``_meta`` has to be in place *before* signing.
-``mcp-proxy-for-aws``'s ``metadata=`` option adds it in an httpx request hook, and httpx
-runs request hooks *after* the ``auth=`` flow that signs - the body changes after it was
-signed and the declared ``Content-Length`` no longer matches. It also skips requests
-without ``params`` (the first ``tools/list`` page, ``ping``). Here the injection runs
-inside the auth flow, in front of the proxy's own signer, which then signs the body that
+An httpx request hook is too late: httpx runs request hooks *after* the ``auth=`` flow
+that signs - the body changes after it was signed and the declared ``Content-Length`` no
+longer matches. Here the injection runs
+inside the auth flow, in front of the SigV4 signer, which then signs the body that
 is actually sent.
 
-Imports only ``httpx`` and ``json`` so the transport logic is testable in isolation.
+Imports only ``httpx2`` and ``json`` so the transport logic is testable in isolation.
 """
 
 import json
 
-import httpx
+import httpx2
 
 # _meta keys for a Domain Join session; a live fleet accepted these. (The public developer
 # guide's example shows other names, saml_response / stack_arn, which were not tried.)
@@ -64,17 +63,17 @@ def inject_meta(body, meta):
 
 def _with_body(request, body):
     """Return a copy of ``request`` that carries ``body`` and a matching ``Content-Length``."""
-    headers = httpx.Headers(request.headers)
-    headers.pop("content-length", None)  # httpx recomputes it from the new body
-    return httpx.Request(
+    headers = httpx2.Headers(request.headers)
+    headers.pop("content-length", None)  # httpx2 recomputes it from the new body
+    return httpx2.Request(
         request.method, request.url, headers=headers, content=body, extensions=request.extensions
     )
 
 
-class DomainJoinAuth(httpx.Auth):
-    """``httpx.Auth`` that adds the Domain Join ``_meta`` to each request, then signs it.
+class DomainJoinAuth(httpx2.Auth):
+    """``httpx2.Auth`` that adds the Domain Join ``_meta`` to each request, then signs it.
 
-    ``inner`` is the SigV4 auth ``mcp-proxy-for-aws`` builds; it receives the request
+    ``inner`` is the SigV4 auth (``lib.sigv4_signer.SigV4HttpAuth``); it receives the request
     *after* ``_meta`` was added, so the signature covers the body that goes on the wire.
     """
 

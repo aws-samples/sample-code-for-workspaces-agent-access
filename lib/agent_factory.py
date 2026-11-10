@@ -34,7 +34,7 @@ from strands.hooks import (
 from strands.tools.executors import SequentialToolExecutor
 
 from .computer_tool import COMPUTER_TOOL_NAME, DEFAULT_VERSION, build_computer_tools, as_service_call
-from .mcp_client import resolve_mcp_endpoint
+from .mcp_client import STATELESS_CLOSE_PROMPT, resolve_mcp_endpoint
 from .wait_tool import WaitTool
 
 # Optional bounds on one task (one ``agent(...)`` call), off by default: ``--max-turns N`` /
@@ -115,13 +115,20 @@ def make_agent(model, system_prompt, mcp_client, *, max_turns=DEFAULT_MAX_TURNS,
         tools.extend(build_computer_tools(tools[0], timeout=tool_timeout, version=computer_version))
     else:
         tools.append(WaitTool())      # the service has no wait tool yet; replace this when it ships
-    return Agent(
+    agent = Agent(
         model=model,
         tools=tools,
         system_prompt=system_prompt,
         hooks=hooks,
         **agent_kwargs,
     )
+    # The client connects while the Agent is built. If a stateless-default client fell back to stateful,
+    # there is no close_session tool, so drop the close_session instruction from the prompt.
+    if (isinstance(system_prompt, str) and STATELESS_CLOSE_PROMPT in system_prompt
+            and getattr(tools[0], "is_stateless", True) is False):
+        agent.system_prompt = system_prompt.replace(f"\n\n{STATELESS_CLOSE_PROMPT}\n", "").replace(
+            STATELESS_CLOSE_PROMPT, "")
+    return agent
 
 
 def agent_options(args):
