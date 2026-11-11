@@ -14,6 +14,7 @@
 # it before any strands-agents bump; it fails at import if they changed.
 strands-agents[openai]==1.58.1
 boto3==1.43.110
+botocore[crt]             # awscrt, which botocore needs for AWS CLI profiles set up with aws login
 mcp==2.1.1                # 2.x speaks both stateless (2026-07-28) and stateful MCP; 2.1.x since strands-agents 1.58.1 allows mcp<2.2. Includes the fixes for CVE-2026-59951 (>= 1.30.0) and CVE-2025-66416, -53365, -53366 (>= 1.23.0)
 httpx2==2.14.0            # HTTP client of mcp 2.x; lib/mcp_client.py signs its requests with SigV4. 2.14 is the last httpx2 for Python 3.10
 rich>=13,<16              # generic_cua's interactive terminal

@@ -186,19 +186,16 @@ agent_common.close_mcp_clients()
 
 ### Pattern 2: IDE MCP Server Configuration
 
-Any IDE that supports MCP servers via stdio can connect using `mcp-proxy-for-aws`:
-
-```bash
-pip install mcp-proxy-for-aws
-```
+Any IDE that supports MCP servers via stdio can connect using `mcp-proxy-for-aws`. It still needs mcp 1.x, so run it with `uvx` (or install it in its own environment), not in the environment of this repo's samples, which use mcp 2.x.
 
 Add an MCP server to your IDE's config with:
 
 ```json
 {
   "type": "stdio",
-  "command": "mcp-proxy-for-aws",
+  "command": "uvx",
   "args": [
+    "mcp-proxy-for-aws",
     "https://agentaccess-mcp.us-east-1.api.aws/mcp",
     "--service", "agentaccess-mcp",
     "--region", "us-east-1"

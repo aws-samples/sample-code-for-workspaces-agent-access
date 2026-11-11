@@ -153,17 +153,17 @@ done
 # ─── Step 7: Validate MCP servers before building the image ───
 # Push the compatibility tester to the build instance and run it against the manifest
 # just written. If any configured server would fail to forward, abort here, before the
-# ~25 minutes of AMI creation and import.
+# ~25 minutes of AMI creation and import. The tester needs mcp 1.x, so it runs in its own venv.
 echo "Step 7: Validating MCP servers before building the image..."
 TESTER_TMP="$(mktemp -d)"
-( cd "$SCRIPT_DIR/../utils/mcpforwardingtester" && zip -rq "$TESTER_TMP/tester.zip" . -x '*__pycache__*' '*.pyc' '*.egg-info*' )
+( cd "$SCRIPT_DIR/../utils/mcpforwardingtester" && zip -rq "$TESTER_TMP/tester.zip" . -x '*__pycache__*' '*.pyc' '*.egg-info*' 'venv/*' '.venv/*' )
 TESTER_B64=$(base64 < "$TESTER_TMP/tester.zip" | tr -d '\n')
 rm -rf "$TESTER_TMP"
 
 VAL_CMD_ID=$(aws ssm send-command --region "$REGION" \
   --instance-ids "$INSTANCE_ID" \
   --document-name "AWS-RunPowerShellScript" \
-  --parameters commands="[\"[System.IO.File]::WriteAllBytes('C:\\\\tester.zip', [System.Convert]::FromBase64String('$TESTER_B64'))\",\"Expand-Archive -Path 'C:\\\\tester.zip' -DestinationPath 'C:\\\\tester' -Force\",\"& 'C:\\\\Program Files\\\\Python312\\\\python.exe' -m pip install --quiet 'C:\\\\tester'\",\"& 'C:\\\\Program Files\\\\Python312\\\\python.exe' -m mcp_forwarding_tester config\",\"exit \$LASTEXITCODE\"]" \
+  --parameters commands="[\"[System.IO.File]::WriteAllBytes('C:\\\\tester.zip', [System.Convert]::FromBase64String('$TESTER_B64'))\",\"Expand-Archive -Path 'C:\\\\tester.zip' -DestinationPath 'C:\\\\tester' -Force\",\"& 'C:\\\\Program Files\\\\Python312\\\\python.exe' -m venv 'C:\\\\tester\\\\venv'\",\"& 'C:\\\\tester\\\\venv\\\\Scripts\\\\python.exe' -m pip install --quiet 'C:\\\\tester'\",\"& 'C:\\\\tester\\\\venv\\\\Scripts\\\\python.exe' -m mcp_forwarding_tester config\",\"exit \$LASTEXITCODE\"]" \
   --query 'Command.CommandId' --output text)
 
 VAL_STATUS="Pending"
