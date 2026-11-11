@@ -22,9 +22,11 @@ On the image builder, in PowerShell:
 py -m pip install "https://github.com/aws-samples/sample-code-for-workspaces-agent-access/archive/refs/heads/main.zip#subdirectory=utils/mcpforwardingtester"
 ```
 
-For local development, from the repo root, in your terminal:
+For local development, from the repo root, in your terminal. The tester needs mcp 1.x, so install it in its own virtual environment, not in the environment of this repo's samples, which use mcp 2.x:
 
 ```bash
+python3 -m venv utils/mcpforwardingtester/venv
+source utils/mcpforwardingtester/venv/bin/activate
 pip install ./utils/mcpforwardingtester
 ```
 
@@ -130,6 +132,8 @@ difference worth checking is the negotiated **MCP protocol version** (the tool p
 if your server accepts only one version, confirm it matches what the service negotiates.
 
 ## Development
+
+In the tester's own virtual environment (see Install):
 
 ```bash
 pip install -e '.[test]'

@@ -123,6 +123,20 @@ python3 agents/<your_workflow>/agent.py --streaming-url "$STREAMING_URL"
 python3 agents/agent_creator/agent.py --update agents/<your_workflow>
 ```
 
+## Supported MCP Protocol Versions
+
+AgentAccess supports these MCP protocol versions:
+
+1. `2025-03-26`
+2. `2025-06-18`
+3. `2025-11-25`
+4. `2026-07-28` (stateless)
+
+**Note:** With stateless MCP, session management moves out of the protocol. The only difference customers will notice is how a session is closed:
+
+- **Stateful:** the client calls `mcp.close()`, which sends HTTP `DELETE` to close the session.
+- **Stateless:** the agent calls the new `agentaccess___close_session` tool to close the session.
+
 ## The native computer tool
 
 By default the model is offered the Agent Access desktop tools (`left_click`, `type_text`, ...) as ordinary function tools. `--native-computer-tool` offers it Anthropic's own `computer` tool instead (version `computer_20251124`), which Claude is trained on. The agent translates each `computer` action into the matching Agent Access call (`lib/computer_tool.py`): clicks keep their modifier keys, scrolls go from wheel notches to the service's ticks (120 per notch), `wait` is done locally, and `zoom` and `cursor_position` are not offered by the service (the latter answers with the last position the agent moved the mouse to). Coordinates outside the 1280 x 720 screen are refused with a message before anything reaches the desktop. Run metrics record the call as the service tool it became, and `computer_tool` in the metrics file says which mode a run used. Whether the native tool does better than the function tools has not been measured; the default stays on the function tools until it has. See `TESTING-3.md` section H.
@@ -166,6 +180,7 @@ Press Ctrl-C once to stop the running task: the current action finishes, the met
 | `--prompt-cache` / `--no-prompt-cache` | on | Bedrock prompt caching (Claude models); `--no-prompt-cache` turns it off |
 | `--max-tokens N` | model default | Maximum tokens per model response |
 | `--mcp-profile PROFILE` | default | AWS profile for SigV4 signing to the MCP endpoint |
+| `--mcp-protocol stateless\|stateful` | per agent (`stateless` for `generic_cua`) | `stateless` (`2026-07-28`, the agent calls `close_session`; falls back to stateful when the endpoint has no `2026-07-28`) or `stateful` (the client closes the session). See [Supported MCP Protocol Versions](#supported-mcp-protocol-versions) |
 | `--llm-profile PROFILE` | default | AWS profile for Bedrock LLM calls |
 | `--mcp-endpoint URL` | `mcp.endpoint` in `scripts/config.json` | Agent Access MCP endpoint; `{region}` is replaced with the MCP region |
 | `--bedrock-api-key KEY` | `AWS_BEARER_TOKEN_BEDROCK`, else a short-term key minted from your credentials | Bedrock API key for non-Claude models (bedrock-mantle); not used for Claude |
@@ -178,7 +193,7 @@ Press Ctrl-C once to stop the running task: the current action finishes, the met
 
 ```
 sample-code-for-workspaces-agent-access/
-├── quickstart.py                # Minimal self-contained example (~60 lines)
+├── quickstart.py                # Minimal self-contained stateless example (~100 lines)
 ├── AGENTS.md                    # Developer guide (tools, architecture, IDE setup)
 ├── agents/
 │   ├── agent_creator/          # Interactive agent builder
@@ -329,10 +344,10 @@ For production multi-tenant deployments, add a signed-grant flow: the caller pas
 
 ## Appendix: Integrate Into Your Own Agent
 
-If you already have a WorkSpaces Applications fleet deployed and want to add agent access to your own codebase, see [`quickstart.py`](quickstart.py) — a self-contained ~60-line example with no dependencies on this repo's `lib/`:
+If you already have a WorkSpaces Applications fleet deployed and want to add agent access to your own codebase, see [`quickstart.py`](quickstart.py) — a self-contained ~100-line stateless example with no dependencies on this repo's `lib/`:
 
 ```bash
-pip install strands-agents mcp-proxy-for-aws boto3
+pip install strands-agents "mcp>=2" boto3
 STREAMING_URL=$(scripts/streaming_url.sh)
 python3 quickstart.py "$STREAMING_URL"
 ```

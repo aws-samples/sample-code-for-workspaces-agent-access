@@ -51,6 +51,11 @@ from .mcp_client import (
     DEFAULT_MCP_ENDPOINT,
     DEFAULT_MCP_REGION_OVERRIDE,
     DEFAULT_MCP_SERVICE,
+    MCP_PROTOCOL_STATEFUL,
+    MCP_PROTOCOL_STATELESS,
+    MCP_PROTOCOLS,
+    STATELESS_CLOSE_PROMPT,
+    mcp_protocol_of,
     resolve_mcp_region,
     create_mcp_client_factory,
     build_mcp_client,
@@ -189,6 +194,8 @@ def create_base_parser(description):
                        help='AWS profile for SigV4 signing to the MCP endpoint')
     parser.add_argument('--mcp-region', metavar='REGION',
                        help='AWS region for MCP SigV4 signing (defaults to runtime region)')
+    parser.add_argument('--mcp-protocol', choices=MCP_PROTOCOLS, default=MCP_PROTOCOL_STATELESS,
+                       help='MCP protocol: stateless (2026-07-28) or stateful (default: stateless)')
     parser.add_argument('--llm-profile', metavar='PROFILE',
                        help='AWS profile for Bedrock LLM calls (if different from default)')
     parser.add_argument('--bedrock-api-key', metavar='KEY',
@@ -363,6 +370,10 @@ def setup_standard_agent(args, agent_dir, skill_filename=None, skill_label=None,
 
     model = create_model(args)
     mcp_factory = create_mcp_client_factory(args)
+    if mcp_protocol_of(mcp_factory) == MCP_PROTOCOL_STATELESS and task_prompt is not None:
+        # Stateless: stopping the client does not end the session, so tell a single-task agent to call
+        # close_session when done. Not in the REPL, where later tasks reuse the session (closed on exit).
+        system_prompt += f"\n\n{STATELESS_CLOSE_PROMPT}\n"
     conv_manager = None
     if not args.no_screenshot_pruning:
         conv_manager = ScreenshotPruningConversationManager(
@@ -383,9 +394,13 @@ def setup_standard_agent(args, agent_dir, skill_filename=None, skill_label=None,
 
 
 def run_standard_agent(agent_dir, description, banner_title, banner_body,
-                       skill_filename=None, skill_label=None):
-    """Run the standard agent pipeline: parse args → load prompts/skill → run → finalize."""
+                       skill_filename=None, skill_label=None, mcp_protocol=MCP_PROTOCOL_STATELESS):
+    """Run the standard agent pipeline: parse args → load prompts/skill → run → finalize.
+
+    ``mcp_protocol`` is this agent's default; ``--mcp-protocol`` overrides it.
+    """
     parser = create_base_parser(description)
+    parser.set_defaults(mcp_protocol=mcp_protocol)
     args = parser.parse_args()
     resolve_session_auth(parser, args)
 

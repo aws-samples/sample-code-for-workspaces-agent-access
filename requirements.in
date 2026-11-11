@@ -10,9 +10,12 @@
 #
 # strands-agents[openai] also installs aws-bedrock-token-generator, which Strands'
 # bedrock_mantle_config uses to mint short-term Bedrock keys for non-Claude models.
+# lib/mcp_client.py patches strands internals (negotiate_session and a few private attributes), so check
+# it before any strands-agents bump; it fails at import if they changed.
 strands-agents[openai]==1.58.1
 boto3==1.43.110
-mcp>=1.30,<2          # >= 1.30.0 fixes CVE-2026-59951 (>= 1.23.0: CVE-2025-66416, -53365, -53366). Keep < 2: mcp-proxy-for-aws caps fastmcp<3.5 (which caps mcp<2) and lib/ relies on mcp 1.x types
-mcp-proxy-for-aws==1.7.0  # exact pin: upstream is moving to fastmcp 4 / mcp 2, which changes the transport API that lib/mcp_client.py relies on
-rich>=13,<16              # generic_cua's interactive terminal (already installed by fastmcp)
+botocore[crt]             # awscrt, which botocore needs for AWS CLI profiles set up with aws login
+mcp==2.1.1                # 2.x speaks both stateless (2026-07-28) and stateful MCP; 2.1.x since strands-agents 1.58.1 allows mcp<2.2. Includes the fixes for CVE-2026-59951 (>= 1.30.0) and CVE-2025-66416, -53365, -53366 (>= 1.23.0)
+httpx2==2.14.0            # HTTP client of mcp 2.x; lib/mcp_client.py signs its requests with SigV4. 2.14 is the last httpx2 for Python 3.10
+rich>=13,<16              # generic_cua's interactive terminal
 prompt_toolkit>=3.0.40,<4 # generic_cua's interactive input: history, multi-line, Ctrl-C handling

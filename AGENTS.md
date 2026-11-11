@@ -17,7 +17,7 @@ Agent Access lets AI agents interact with Windows desktop applications running o
 
 ### Connection Method
 
-Agents connect directly to the MCP endpoint over Streamable HTTP, with `mcp-proxy-for-aws` SigV4-signing each request. Every sample in this repo uses this path.
+Agents connect directly to the MCP endpoint over Streamable HTTP, and the client SigV4-signs each request (`lib/mcp_client.py`, on the MCP Python SDK 2.x). Every sample in this repo uses this path.
 
 ### Endpoint
 
@@ -57,7 +57,7 @@ X-Amzn-AgentAccess-Streaming-Session-Url: <streaming-url>
 
 ### Domain-joined fleets (SAML)
 
-A domain-joined fleet has no streaming URL. The client sends a SAML assertion and the stack ARN in the JSON-RPC `_meta` of every request instead, and must add them **before** signing: the SigV4 signature covers the body. `mcp-proxy-for-aws`'s `metadata=` option adds `_meta` after signing (and skips requests without `params`), so this repo does it in `lib/domain_join_auth.py`, an `httpx.Auth` that wraps the proxy's signer. The `_meta` keys are `aws.agentaccess/workspacesApplicationsSamlAssertion` and `aws.agentaccess/workspacesApplicationsStackArn`; a live domain-joined fleet accepted them. A request that carries an expired assertion is refused (HTTP 400, `SAML assertion has expired`), and this sample re-sends the assertion it started with, so it stops working when that assertion expires. The public developer guide's example uses other key names (not tried here) and recommends `metadata=`, which cannot work with SigV4 because it edits the body after signing. See "Domain Join" in the README.
+A domain-joined fleet has no streaming URL. The client sends a SAML assertion and the stack ARN in the JSON-RPC `_meta` of every request instead, and must add them **before** signing: the SigV4 signature covers the body. `lib/domain_join_auth.py` does this: it adds `_meta` to each request first, then hands it to the SigV4 signer. The `_meta` keys are `aws.agentaccess/workspacesApplicationsSamlAssertion` and `aws.agentaccess/workspacesApplicationsStackArn`; a live domain-joined fleet accepted them. A request that carries an expired assertion is refused (HTTP 400, `SAML assertion has expired`), and this sample re-sends the assertion it started with, so it stops working when that assertion expires. The public developer guide's example uses other key names (not tried here) and recommends `metadata=`, which cannot work with SigV4 because it edits the body after signing. See "Domain Join" in the README.
 
 ## Available MCP Tools
 
@@ -171,38 +171,31 @@ The service's own tool reference is at <https://docs.aws.amazon.com/appstream2/l
 ### Pattern 1: Direct MCP Connection (Python)
 
 ```python
-from strands import Agent
-from strands.models.bedrock import BedrockModel
-from strands.tools.mcp import MCPClient
-from mcp_proxy_for_aws.client import aws_iam_streamablehttp_client
+from lib import agent_common
 
-mcp_client = MCPClient(lambda: aws_iam_streamablehttp_client(
-    endpoint="https://agentaccess-mcp.us-east-1.api.aws/mcp",
-    aws_service="agentaccess-mcp",
-    aws_region="us-east-1",
-    headers={"X-Amzn-AgentAccess-Streaming-Session-Url": streaming_url},
-))
+# Endpoint, signing region and service come from scripts/config.json.
+parser = agent_common.create_base_parser("My agent")
+args = parser.parse_args(["--streaming-url", streaming_url])     # stateless MCP by default
+mcp_client = agent_common.build_mcp_client(agent_common.create_mcp_client_factory(args), args.mcp_timeout)
 
-model = BedrockModel(model_id="global.anthropic.claude-sonnet-5-5")
-agent = Agent(model=model, tools=[mcp_client])
-agent("Open Notepad and type 'Hello World'")
+model = agent_common.create_model(args)
+agent = agent_common.make_agent(model, "You control a Windows desktop via MCP tools.", mcp_client)
+agent("Open Notepad and type 'Hello World'. When you are done, call close_session.")
+agent_common.close_mcp_clients()
 ```
 
 ### Pattern 2: IDE MCP Server Configuration
 
-Any IDE that supports MCP servers via stdio can connect using `mcp-proxy-for-aws`:
-
-```bash
-pip install mcp-proxy-for-aws
-```
+Any IDE that supports MCP servers via stdio can connect using `mcp-proxy-for-aws`. It still needs mcp 1.x, so run it with `uvx` (or install it in its own environment), not in the environment of this repo's samples, which use mcp 2.x.
 
 Add an MCP server to your IDE's config with:
 
 ```json
 {
   "type": "stdio",
-  "command": "mcp-proxy-for-aws",
+  "command": "uvx",
   "args": [
+    "mcp-proxy-for-aws",
     "https://agentaccess-mcp.us-east-1.api.aws/mcp",
     "--service", "agentaccess-mcp",
     "--region", "us-east-1"
@@ -233,10 +226,18 @@ Optional flags:
 
 ## Session Lifecycle
 
+The server supports two flows.
+
+### Stateful
+
 1. **Session starts** when the first MCP `initialize` request is received with a streaming URL (or, for domain-joined fleets, a SAML assertion and stack ARN in `_meta`).
 2. **Session is active** while the MCP connection is open. Tools can be called repeatedly.
-3. **Session ends** when the MCP connection closes or the streaming URL expires (`aws appstream create-streaming-url --validity`: the API default is 60 seconds and the maximum 604800; the examples here use 3600). A domain-joined session as this sample runs it stops working when its SAML assertion expires: the service refuses requests that carry an expired one.
+3. **Session ends** when the client sends HTTP `DELETE` (eg- `mcp.close()`), the MCP connection closes, or the streaming URL expires (`aws appstream create-streaming-url --validity`: the API default is 60 seconds and the maximum 604800; the examples here use 3600). A domain-joined session as this sample runs it stops working when its SAML assertion expires: the service refuses requests that carry an expired one.
 4. **Desktop state persists** within a session — applications stay open, files remain on disk.
+
+### Stateless, MCP `2026-07-28`
+
+The only difference from stateful is how the session is closed: the client does not need to call `mcp.close()`, the agent calls the `agentaccess___close_session` tool instead. The first tool call passes `mcpSessionId: "NEW"`, and the later calls pass the `mcpSessionId` the server returned. This repo's agents also close a stateless session from code on exit if the agent did not. See "Supported MCP Protocol Versions" in [`README.md`](README.md#supported-mcp-protocol-versions).
 
 ## Error Handling
 
@@ -254,7 +255,7 @@ Optional flags:
 ## Dependencies
 
 ```
-pip install strands-agents mcp-proxy-for-aws boto3
+pip install strands-agents "mcp>=2" boto3
 ```
 
 

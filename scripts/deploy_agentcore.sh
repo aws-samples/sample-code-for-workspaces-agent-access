@@ -167,7 +167,7 @@ mkdir -p "$(dirname "$BUILD_DIR")"
 
 if [ -d "$BUILD_DIR/agentcore" ]; then
   # Check if our deps are already in pyproject.toml
-  if grep -q "mcp-proxy-for-aws" "$BUILD_DIR/app/$AC_PROJECT_NAME/pyproject.toml" 2>/dev/null; then
+  if grep -q "httpx2" "$BUILD_DIR/app/$AC_PROJECT_NAME/pyproject.toml" 2>/dev/null; then
     info "Project already exists with deps — reusing"
   else
     info "Project exists but missing deps — recreating"
@@ -391,6 +391,8 @@ def _build_agent(body):
     args.expire_session_on_exit = bool(body.get("expire_session_on_exit"))
     args.max_turns = int(body.get("max_turns") or 0)
     args.max_seconds = int(body.get("max_seconds") or 0)
+    # The runtime agent stays on stateful MCP: the session ends when the handler closes the client.
+    args.mcp_protocol = agent_common.MCP_PROTOCOL_STATEFUL
 
     model = agent_common.create_model(args)
     mcp_factory = agent_common.create_mcp_client_factory(args)
@@ -490,10 +492,21 @@ info "Step 3: Updating dependencies..."
 # source of truth; regenerate requirements.txt with the uv command it gives.
 if [ -f "$APP_DIR/pyproject.toml" ]; then
   cd "$APP_DIR"
+  # bedrock-agentcore[strands-agents] <= 1.24.2 caps mcp<2 but works with mcp 2.x, so override it;
+  # without this `uv add mcp==2.1.1` fails to resolve.
+  python3 - <<'PY' || fail "Could not update pyproject.toml for mcp 2.x"
+import re
+p, line = "pyproject.toml", 'override-dependencies = ["mcp==2.1.1"]'
+t = open(p).read()
+if not re.search(r"(?m)^override-dependencies", t):
+    m = re.search(r"(?m)^\[tool\.uv\][ \t]*(#.*)?$", t)  # reuse an existing [tool.uv]: a second one is invalid TOML
+    t = t[:m.end()] + "\n" + line + t[m.end():] if m else t.rstrip("\n") + "\n\n[tool.uv]\n" + line + "\n"
+    open(p, "w").write(t)
+PY
   for dep in \
-    "mcp-proxy-for-aws==1.7.0" \
     "strands-agents==1.58.1" \
-    "mcp==1.30.0" \
+    "mcp==2.1.1" \
+    "httpx2==2.14.0" \
     "boto3==1.43.110" \
   ; do
     uv add --quiet "$dep" || fail "Could not pin $dep in the AgentCore project (uv add failed)"
@@ -501,7 +514,7 @@ if [ -f "$APP_DIR/pyproject.toml" ]; then
   cd "$BUILD_DIR"
   ok "Dependencies installed"
 else
-  warn "pyproject.toml not found — add mcp-proxy-for-aws manually"
+  warn "pyproject.toml not found — add strands-agents, mcp and httpx2 manually (see requirements.txt)"
 fi
 
 # ── Step 4: Update environment variables ──────────────────────

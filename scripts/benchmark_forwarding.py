@@ -41,7 +41,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from lib.agent_factory import make_agent
 from lib.model import create_model
-from lib.mcp_client import create_mcp_client_factory, build_mcp_client
+from lib.mcp_client import create_mcp_client_factory, build_mcp_client, close_mcp_clients
 from lib.strands_logger import StrandsAgentLogger
 from lib.screenshot_pruning_manager import ScreenshotPruningConversationManager
 
@@ -140,6 +140,7 @@ def run_single_trial(args, arm_name, use_forwarded):
 
     max_retries = getattr(args, 'mcp_retries', 3)
     for attempt in range(1, max_retries + 1):
+        mcp_client = None
         try:
             mcp_client = build_mcp_client(mcp_factory, getattr(args, 'mcp_timeout', 180))
 
@@ -170,6 +171,9 @@ def run_single_trial(args, arm_name, use_forwarded):
                 time.sleep(10 * attempt)
                 continue
             break
+        finally:
+            if mcp_client is not None:
+                close_mcp_clients([mcp_client])   # end the session, so the next arm gets the desktop
 
     elapsed = time.time() - start_time
     metrics_file = logger.finalize(success, error, agent_result=result)
