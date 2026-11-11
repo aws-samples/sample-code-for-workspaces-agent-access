@@ -10,7 +10,7 @@ from botocore.credentials import CredentialProvider
 from strands.models.bedrock import BedrockModel
 from strands.models.model import CacheConfig
 
-from . import computer_tool
+from . import computer_tool, computer_use_interface
 
 
 # Accepted regions for Bedrock calls.
@@ -34,28 +34,30 @@ _PLACEHOLDER_TOOL_SPEC = {
 }
 
 
-class NativeComputerBedrockModel(BedrockModel):
-    """BedrockModel that offers Anthropic's ``computer_20251124`` tool instead of the desktop function tools.
+class TypedComputerToolBedrockModel(BedrockModel):
+    """BedrockModel that offers Claude its typed computer tool, for the Anthropic computer-use interfaces.
 
-    The agent still registers the Agent Access tools and a ``computer`` tool that runs on them
-    (``lib.computer_tool``); only the request to the model changes. The desktop function tools
-    and the ``computer`` function spec are left out of ``toolConfig`` and the typed tool goes in
-    ``additionalModelRequestFields``, next to the beta header. Other tools (forwarded MCP tools)
-    are sent as usual. ``toolConfig`` must exist whenever the history holds tool calls, so a
-    placeholder function tool stands in when nothing else is left; it is sent on every request,
-    first one included, so the cached prefix never changes shape.
+    With ``ANTHROPIC_COMPUTER_20251124`` or ``ANTHROPIC_COMPUTER_TOOLSET_20260801``
+    (``lib/computer_use_interface.py``) the service lists the interface tools, ``computer`` or one
+    toolset member tool per action, and runs each call. This model leaves the specs of those tools out
+    of ``toolConfig`` and puts Claude's typed declaration (``lib.computer_tool``) in
+    ``additionalModelRequestFields`` instead, with the beta header for ``computer_20251124``. Other
+    tools (``agentaccess___wait``, forwarded MCP tools) are sent as usual. ``toolConfig`` must exist
+    whenever the history holds tool calls, so a placeholder function tool stands in when nothing else
+    is left; it is sent on every request, first one included, so the cached prefix never changes shape.
     """
 
-    computer_version = computer_tool.DEFAULT_VERSION      # "20251124" or "20260801"
+    computer_version = computer_tool.COMPUTER_TOOL_VERSION      # or computer_tool.TOOLSET_VERSION
 
     def format_request(self, messages, tool_specs=None, system_prompt_content=None, tool_choice=None,
                        dynamic_trailing_blocks=0, **kwargs):
-        kept = [spec for spec in (tool_specs or []) if not computer_tool.is_desktop_spec(spec["name"], self.computer_version)]
+        kept = [spec for spec in (tool_specs or [])
+                if not computer_tool.is_typed_tool_spec(spec["name"], self.computer_version)]
         request = super().format_request(
             messages, kept or [_PLACEHOLDER_TOOL_SPEC], system_prompt_content, tool_choice,
             dynamic_trailing_blocks, **kwargs)
         fields = dict(request.get("additionalModelRequestFields") or {})
-        if self.computer_version == "20260801":
+        if self.computer_version == computer_tool.TOOLSET_VERSION:
             fields["tools"] = [json.loads(json.dumps(computer_tool.TOOLSET_DEFINITION))]      # needs no beta header
         else:
             fields["tools"] = [dict(computer_tool.TOOL_DEFINITION)]
@@ -111,18 +113,12 @@ def create_model(args):
         if getattr(args, 'max_tokens', None):
             model_kwargs["max_tokens"] = args.max_tokens
 
-        native = getattr(args, 'native_computer_tool', False)
+        interface = computer_use_interface.requested_interface(args)
+        typed_version = computer_use_interface.typed_tool_version(interface)
         is_claude = "anthropic" in model_id.lower() or "claude" in model_id.lower()
-        if native and not is_claude:
-            raise ValueError("--native-computer-tool needs a Claude model; "
-                             f"{model_id!r} only works with the desktop function tools")
-        version = getattr(args, 'computer_tool_version', computer_tool.DEFAULT_VERSION)
-        if version not in computer_tool.VERSIONS:
-            raise ValueError(f"unknown computer tool version {version!r}; choose one of {sorted(computer_tool.VERSIONS)}")
-        if native and version == "20251124":
-            model_kwargs["additional_request_fields"] = {
-                "anthropic_beta": ["computer-use-2025-11-24"],
-            }
+        if typed_version and not is_claude:
+            raise ValueError(f"--computer-use-interface {interface} needs a Claude model; "
+                             f"{model_id!r} cannot be offered Claude's typed computer tool")
 
         if getattr(args, 'llm_profile', None):
             model_kwargs["boto_session"] = boto3.Session(
@@ -136,10 +132,10 @@ def create_model(args):
             fields["thinking"] = {"type": "adaptive"}
             fields["output_config"] = {"effort": effort}
             model_kwargs["additional_request_fields"] = fields
-        if not native:
+        if not typed_version:
             return BedrockModel(**model_kwargs)
-        model = NativeComputerBedrockModel(**model_kwargs)
-        model.computer_version = version
+        model = TypedComputerToolBedrockModel(**model_kwargs)      # adds the beta header itself (format_request)
+        model.computer_version = typed_version
         return model
 
     else:

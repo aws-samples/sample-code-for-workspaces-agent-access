@@ -19,7 +19,6 @@ import re
 import signal
 import sys
 import threading
-from datetime import timedelta
 
 from strands import Agent
 from strands.hooks import (
@@ -33,9 +32,10 @@ from strands.hooks import (
 )
 from strands.tools.executors import SequentialToolExecutor
 
-from .computer_tool import COMPUTER_TOOL_NAME, DEFAULT_VERSION, build_computer_tools, as_service_call
+from .computer_tool import as_service_call
 from .mcp_client import STATELESS_CLOSE_PROMPT, resolve_mcp_endpoint
-from .wait_tool import WaitTool
+from .computer_use_interface import call_namer, needs_client_side_wait, require_applied, requested_interface
+from .wait_tool import DURATION_ARGUMENT, WaitTool
 
 # Optional bounds on one task (one ``agent(...)`` call), off by default: ``--max-turns N`` /
 # ``--max-seconds S`` turn them on, 0 (or None) means no bound.
@@ -85,8 +85,7 @@ def require_auth_mode(args, supported, entry_point):
 
 
 def make_agent(model, system_prompt, mcp_client, *, max_turns=DEFAULT_MAX_TURNS,
-               max_seconds=DEFAULT_MAX_SECONDS, native_computer=False, tool_timeout=None,
-               computer_version=DEFAULT_VERSION, **agent_kwargs):
+               max_seconds=DEFAULT_MAX_SECONDS, computer_use_interface=None, **agent_kwargs):
     """Construct the Agent every entry point uses.
 
     ``agent_kwargs`` are passed straight to :class:`strands.Agent` (for example
@@ -101,20 +100,37 @@ def make_agent(model, system_prompt, mcp_client, *, max_turns=DEFAULT_MAX_TURNS,
     * a task ends, with an exception, when the MCP connection has died, when the user presses
       Ctrl-C, or (if set) when ``max_turns`` model calls or ``max_seconds`` seconds have passed.
 
-    ``mcp_client`` may also be a list of tools. Unless ``native_computer`` is set, the agent also gets a ``wait`` tool that pauses here (``lib/wait_tool.py``). ``native_computer`` adds the ``computer`` tool
-    (see ``lib.computer_tool``); the model has to be the one from ``create_model`` with
-    ``--native-computer-tool`` for the model to be offered it. ``tool_timeout`` (a timedelta) bounds
-    each of its desktop actions.
+    ``mcp_client`` may also be a list of tools. Without ``computer_use_interface`` the agent also gets a
+    ``wait`` tool that pauses here (``lib/wait_tool.py``).
+
+    With ``computer_use_interface`` (``--computer-use-interface``, ``lib/computer_use_interface.py``)
+    the service converts the model's computer-use tool calls itself. Three kinds of tools are involved:
+
+    * The **interface tools**, listed and run by the service in place of the Agent Access desktop
+      tools: for ``ANTHROPIC_COMPUTER_20251124`` one tool named ``computer`` (Claude's ``computer``
+      actions), for ``ANTHROPIC_COMPUTER_TOOLSET_20260801`` one toolset member tool per action
+      (``screenshot``, ``left_click``, ``type``, ...), for the other interfaces the tools that
+      interface defines.
+    * The service's other **Agent Access tools**, still listed: ``agentaccess___wait`` (pause),
+      ``agentaccess___execute_sequence``, ``agentaccess___get_session_info``.
+    * The **client-side tool** this agent adds in the default mode, ``WaitTool`` (``lib/wait_tool.py``).
+      It is not added here, because the service lists ``agentaccess___wait``. The exception is the
+      toolset's ``wait`` member tool for ``ANTHROPIC_COMPUTER_TOOLSET_20260801``: Claude's toolset
+      declaration offers it but the service does not list it, so the agent adds a client-side
+      ``wait`` that pauses here.
+
+    For the two Anthropic interfaces the model has to be the one ``create_model`` builds for them,
+    which offers Claude its typed tool declaration.
+
+    If the service lists the Agent Access desktop tools (``agentaccess___left_click``, ...) instead,
+    it did not apply the interface to this account, and :class:`InterfaceNotApplied` is raised.
     """
     hooks = list(agent_kwargs.pop("hooks", None) or [])
-    hooks += [DropReasoning(), StopAfterFailedAction(), ConnectionLostGuard(),
+    hooks += [DropReasoning(), StopAfterFailedAction(call_namer(computer_use_interface)), ConnectionLostGuard(),
               RunBudgetGuard(max_turns, max_seconds), InterruptGuard()]
     agent_kwargs.setdefault("tool_executor", SequentialToolExecutor())
     tools = list(mcp_client) if isinstance(mcp_client, (list, tuple)) else [mcp_client]
-    if native_computer:
-        tools.extend(build_computer_tools(tools[0], timeout=tool_timeout, version=computer_version))
-    else:
-        tools.append(WaitTool())      # the service has no wait tool yet; replace this when it ships
+    tools += _client_side_tools(computer_use_interface)
     agent = Agent(
         model=model,
         tools=tools,
@@ -122,6 +138,8 @@ def make_agent(model, system_prompt, mcp_client, *, max_turns=DEFAULT_MAX_TURNS,
         hooks=hooks,
         **agent_kwargs,
     )
+    if computer_use_interface:
+        require_applied(computer_use_interface, agent.tool_names)
     # The client connects while the Agent is built. If a stateless-default client fell back to stateful,
     # there is no close_session tool, so drop the close_session instruction from the prompt.
     if (isinstance(system_prompt, str) and STATELESS_CLOSE_PROMPT in system_prompt
@@ -131,13 +149,25 @@ def make_agent(model, system_prompt, mcp_client, *, max_turns=DEFAULT_MAX_TURNS,
     return agent
 
 
+def _client_side_tools(computer_use_interface):
+    """The client-side tools this agent runs itself, next to the Agent Access tools the service lists.
+
+    With a computer-use interface the service runs the interface tools and lists ``agentaccess___wait``.
+    The one gap is the toolset's own ``wait`` member (``ANTHROPIC_COMPUTER_TOOLSET_20260801``): Claude's
+    toolset declaration offers it but the service lists no tool by that name, so a client-side
+    ``wait`` pauses here. Without an interface, ``WaitTool`` for the default function-tool mode.
+    """
+    if computer_use_interface:
+        if needs_client_side_wait(computer_use_interface):
+            # the service lists no toolset `wait`; remove this when it does, or there are two tools named wait
+            return [WaitTool(DURATION_ARGUMENT)]
+        return []
+    return [WaitTool()]      # the service has no wait tool yet; replace this when it ships
+
+
 def agent_options(args):
-    """Everything ``make_agent`` takes from the command line: the limits, the native computer tool, the tool timeout."""
-    seconds = getattr(args, "tool_timeout", None)
-    return {**agent_limits(args),
-            "native_computer": bool(getattr(args, "native_computer_tool", False)),
-            "computer_version": getattr(args, "computer_tool_version", DEFAULT_VERSION),
-            "tool_timeout": timedelta(seconds=seconds) if seconds else None}
+    """Everything ``make_agent`` takes from the command line: the limits and the computer-use interface."""
+    return {**agent_limits(args), "computer_use_interface": requested_interface(args)}
 
 
 def agent_limits(args):
@@ -351,8 +381,9 @@ class StopAfterFailedAction:
     executed" and the model looks again.
     """
 
-    def __init__(self):
+    def __init__(self, call_namer=as_service_call):
         self._failed = None
+        self._call_namer = call_namer      # names the failed call in the message (lib/computer_use_interface.py)
 
     def register_hooks(self, registry, **kwargs):
         registry.add_callback(BeforeModelCallEvent, self._new_turn)
@@ -370,7 +401,7 @@ class StopAfterFailedAction:
 
     def _note_failure(self, event):
         if self._failed is None and _error_text(event.result) is not None:
-            self._failed = as_service_call(event.tool_use.get("name", "tool"), event.tool_use.get("input"))[0]
+            self._failed = self._call_namer(event.tool_use.get("name", "tool"), event.tool_use.get("input"))[0]
 
 
 class RunLimitReached(RuntimeError):

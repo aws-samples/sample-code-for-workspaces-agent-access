@@ -137,9 +137,24 @@ AgentAccess supports these MCP protocol versions:
 - **Stateful:** the client calls `mcp.close()`, which sends HTTP `DELETE` to close the session.
 - **Stateless:** the agent calls the new `agentaccess___close_session` tool to close the session.
 
-## The native computer tool
+## Computer-use interfaces
 
-By default the model is offered the Agent Access desktop tools (`left_click`, `type_text`, ...) as ordinary function tools. `--native-computer-tool` offers it Anthropic's own `computer` tool instead (version `computer_20251124`), which Claude is trained on. The agent translates each `computer` action into the matching Agent Access call (`lib/computer_tool.py`): clicks keep their modifier keys, scrolls go from wheel notches to the service's ticks (120 per notch), `wait` is done locally, and `zoom` and `cursor_position` are not offered by the service (the latter answers with the last position the agent moved the mouse to). Coordinates outside the 1280 x 720 screen are refused with a message before anything reaches the desktop. Run metrics record the call as the service tool it became, and `computer_tool` in the metrics file says which mode a run used. Whether the native tool does better than the function tools has not been measured; the default stays on the function tools until it has. See `TESTING-3.md` section H.
+By default the model is offered the Agent Access desktop tools (`left_click`, `type_text`, ...) as ordinary function tools. With `--computer-use-interface`, it is offered the computer-use tools a model was trained on instead, and the service converts each call. The agent sends the value in the `X-Amzn-AgentAccess-Computer-Use-Interface-Id` header on every MCP request; the service lists that interface's tools in place of the Agent Access desktop tools and converts each call into the desktop action it stands for (`lib/computer_use_interface.py`). The service's other tools, such as `agentaccess___wait`, stay listed.
+
+```bash
+python3 agents/generic_cua/agent.py --streaming-url "$STREAMING_URL" \
+  --computer-use-interface ANTHROPIC_COMPUTER_20251124
+```
+
+| Value | Tools in the shape of | How this agent offers them to the model |
+|-------|-----------------------|-----------------------------------------|
+| `ANTHROPIC_COMPUTER_20251124` | Anthropic's `computer_20251124` tool (one `computer` tool) | Claude's typed `computer_20251124` tool, with its beta header (Claude models only) |
+| `ANTHROPIC_COMPUTER_TOOLSET_20260801` | Anthropic's `computer_toolset_20260801` (one tool per action) | Claude's typed `computer_toolset_20260801`, no beta header (Sonnet 5 / Opus 5 models and later) |
+| `ANTHROPIC_COMPUTER_20250124` | Anthropic's older `computer_20250124` tool | The function tools the service lists |
+| `OPENAI_COMPUTER_V1` | OpenAI's computer-use tool (the action is in `type`) | The function tools the service lists |
+| `GOOGLE_COMPUTER_USE_3X_DESKTOP_V1` | Google Gemini's computer-use desktop tools (coordinates on a 0-999 grid) | The function tools the service lists |
+
+Values are case-sensitive. The service rejects actions the desktop cannot do, such as `wait`, `zoom` and `cursor_position`. With `ANTHROPIC_COMPUTER_20251124` the model pauses with the service's `agentaccess___wait` tool; with `ANTHROPIC_COMPUTER_TOOLSET_20260801` the toolset's own `wait` tool, which the service does not list, runs in the agent. If the service does not enable computer-use interfaces for your account, it lists the Agent Access desktop tools and the agent stops with an error that says so. Run metrics record each Claude call as the Agent Access action it stands for (`left_click` with `x`/`y`, not `computer`), and `computer_tool` in the metrics file says which tool shape a run used.
 
 ## Run metrics
 
@@ -163,8 +178,7 @@ Press Ctrl-C once to stop the running task: the current action finishes, the met
 |------|---------|-------------|
 | `--streaming-url URL` | *(required unless a SAML assertion is given)* | WorkSpaces Applications streaming URL for the desktop session |
 | `--model-id ID` | `global.anthropic.claude-sonnet-5-5` | Bedrock model ID (`global.anthropic.claude-sonnet-4-6` also works) |
-| `--native-computer-tool` | off | Offer Claude Anthropic's `computer_20251124` tool (declared at the service's 1280x720 screen) instead of the individual desktop tools; each `computer` action is carried out with the matching Agent Access tool. Claude models only; sends the `computer-use-2025-11-24` beta header (the default mode sends none). |
-| `--computer-tool-version` | `20251124` | With `--native-computer-tool`: `20251124` (the `computer_20251124` tool, beta header) or `20260801` (the newer `computer_toolset_20260801`: one tool per action, no beta header, Sonnet 5 / Opus 5 models and later) |
+| `--computer-use-interface INTERFACE` | off | Ask the service to list and run this computer-use interface's tools. See [Computer-use interfaces](#computer-use-interfaces) |
 | `--effort low\|medium\|high` | model default | Reasoning effort for Claude models that support it (sends adaptive thinking and `output_config.effort`) |
 | `--mcp-timeout SECS` | `180` | MCP client startup timeout |
 | `--mcp-retries N` | `3` | Number of MCP connection retries |
@@ -209,7 +223,8 @@ sample-code-for-workspaces-agent-access/
 │   ├── saml_assertion.py       # Domain Join inputs: assertion file, validation, log redaction
 │   ├── retry.py                # Connection retry logic, error classification
 │   ├── screenshot_pruning_manager.py  # Token-saving screenshot manager
-│   ├── computer_tool.py        # Anthropic computer tool on top of the Agent Access tools (--native-computer-tool)
+│   ├── computer_tool.py        # Claude's typed computer tools for the Anthropic interfaces; how their calls are logged
+│   ├── computer_use_interface.py  # Computer-use interfaces converted by the service (--computer-use-interface)
 │   ├── wait_tool.py            # Local wait tool until the service offers one
 │   ├── terminal_ui.py          # generic_cua's interactive terminal
 │   └── strands_logger.py       # Metrics and logging

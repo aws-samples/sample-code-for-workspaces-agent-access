@@ -75,8 +75,7 @@ Each command above is one logical line: when you continue a line with `\`, the b
 | `--model-id` | No | `global.anthropic.claude-sonnet-5-5` | Bedrock model ID |
 | `--region` | No | `AWS_REGION`, else `us-east-1` | AWS region for Bedrock |
 | `--effort` | No | model default | `low`, `medium` or `high`: reasoning effort for Claude models that support it |
-| `--native-computer-tool` | No | off | Use Claude's native `computer` tool instead of the individual desktop tools (Claude models only) |
-| `--computer-tool-version` | No | `20251124` | With `--native-computer-tool`: `20251124` or `20260801` (the newer toolset) |
+| `--computer-use-interface` | No | off | Ask the service for a computer-use interface; see [Computer-use interfaces](../../README.md#computer-use-interfaces) |
 | `--mcp-region` | No | `AWS_REGION` | AWS region for MCP SigV4 signing; must match the fleet's region, which can differ from `--region` |
 | `--mcp-endpoint` | No | from `scripts/config.json` | Agent Access MCP endpoint (`{region}` is replaced with the MCP region) |
 | `--mcp-profile` | No | default credentials | AWS profile for SigV4 signing to the MCP endpoint |

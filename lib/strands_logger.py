@@ -119,7 +119,7 @@ from strands.hooks.events import (
     BeforeToolCallEvent,
 )
 
-from .computer_tool import as_service_call
+from .computer_tool import as_service_call, is_anthropic_computer_call, is_text_point, point_from_text
 from .saml_assertion import redact
 
 _MAX_ERROR_CHARS = 500   # how much of a tool's error text goes into the metrics file
@@ -150,7 +150,7 @@ def _result_text(result) -> str:
     ).strip()
 
 
-def _tool_use_name(block) -> Optional[str]:
+def _tool_use_name(block, call_namer=as_service_call) -> Optional[str]:
     """Name of the tool a message content block asks for (Strands ``toolUse``; also the raw ``tool_use`` form)."""
     if not isinstance(block, dict):
         return None
@@ -160,8 +160,27 @@ def _tool_use_name(block) -> Optional[str]:
     elif block.get("type") == "tool_use":
         name, tool_input = block.get("name"), block.get("input")
     # the same short name tool_calls[].action uses, so the two can be matched: agentaccess___click -> click
-    # (a native ``computer`` call is named for the service call it becomes)
-    return as_service_call(name, tool_input)[0] if isinstance(name, str) else None
+    # (a Claude ``computer`` call is named for the service call it stands for)
+    return call_namer(name, tool_input)[0] if isinstance(name, str) else None
+
+
+def _coerce_text_points(tool_input: Dict[str, Any]) -> bool:
+    """Replace a ``coordinate`` / ``start_coordinate`` written as text with ``[x, y]``; True if any changed.
+
+    Callers apply this only to Claude's computer tool calls (:func:`computer_tool.is_anthropic_computer_call`),
+    which take points as ``coordinate`` [x, y] and sometimes write them as text
+    (``"[640, 360]"``). The service that converts the call (``--computer-use-interface``) needs a real
+    array. Unreadable text is left for the service to reject.
+    """
+    changed = False
+    for key in ("coordinate", "start_coordinate"):
+        value = tool_input.get(key)
+        if is_text_point(value):
+            point = point_from_text(value)
+            if point is not None:
+                tool_input[key] = point
+                changed = True
+    return changed
 
 
 def _input_dict(tool_use) -> Dict[str, Any]:
@@ -183,8 +202,12 @@ class StrandsAgentLogger:
         logger.finalize(success=True)
     """
 
-    def __init__(self, log_dir="logs", metrics_dir="metrics", screenshots_dir="screenshots", quiet_display=False):
+    def __init__(self, log_dir="logs", metrics_dir="metrics", screenshots_dir="screenshots", quiet_display=False,
+                 call_namer=as_service_call):
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Names each tool call (short name, input) for the log, metrics and screenshot handling;
+        # lib/computer_use_interface.py call_namer picks it for the run's computer-use interface.
+        self.call_namer = call_namer
         self.start_time = time.time()
         self.screenshot_counter = 0
         self.iterations = 0
@@ -284,10 +307,13 @@ class StrandsAgentLogger:
         """Hook: fix coordinate-param string coercion.
 
         Some models emit coordinate values as strings ("875") or combined
-        ("875, 27"). Coerce them to integers so the MCP server accepts them.
+        ("875, 27"). Coerce them to integers so the MCP server accepts them, and a
+        ``coordinate`` written as text to an ``[x, y]`` array (:func:`_coerce_text_points`).
         """
         tool_name = event.tool_use.get("name", "")
-        short_name, tool_input = as_service_call(tool_name, _input_dict(event.tool_use))
+        # Coerce the input that is sent, not the namer's view of it: a namer may return a copy.
+        tool_input = _input_dict(event.tool_use)
+        short_name, _ = self.call_namer(tool_name, tool_input)
         self._tool_started[event.tool_use.get("toolUseId")] = time.monotonic()
         changed = False
         for key in ("x", "y", "start_x", "start_y", "end_x", "end_y", "scroll_amount"):
@@ -313,6 +339,8 @@ class StrandsAgentLogger:
                         changed = True
                     except (ValueError, TypeError):
                         pass
+        if is_anthropic_computer_call(tool_name):      # only Claude's computer tool takes [x, y]; others keep a text coordinate
+            changed = _coerce_text_points(tool_input) or changed
         if changed:
             # Don't log raw params for sensitive tools even here.
             self.file_logger.debug(
@@ -327,7 +355,7 @@ class StrandsAgentLogger:
         success = error_str is None
         duration = self._tool_duration(event)
 
-        short_name, tool_input = as_service_call(tool_name, _input_dict(event.tool_use))
+        short_name, tool_input = self.call_namer(tool_name, _input_dict(event.tool_use))
 
         # Console display
         if short_name == "screenshot":
@@ -460,7 +488,7 @@ class StrandsAgentLogger:
 
             content = msg.get("content", []) if isinstance(msg, dict) else getattr(msg, 'content', [])
             if isinstance(content, list):
-                tools_used = [name for name in map(_tool_use_name, content) if name]
+                tools_used = [name for name in (_tool_use_name(block, self.call_namer) for block in content) if name]
 
             # Strands attaches this call's usage to the message before the hook runs.
             metadata = msg.get("metadata") if isinstance(msg, dict) else None
