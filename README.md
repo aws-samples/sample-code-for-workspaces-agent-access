@@ -156,6 +156,82 @@ python3 agents/generic_cua/agent.py --streaming-url "$STREAMING_URL" \
 
 Values are case-sensitive. The service rejects actions the desktop cannot do, such as `wait`, `zoom` and `cursor_position`. With `ANTHROPIC_COMPUTER_20251124` the model pauses with the service's `agentaccess___wait` tool; with `ANTHROPIC_COMPUTER_TOOLSET_20260801` the toolset's own `wait` tool, which the service does not list, runs in the agent. If the service does not enable computer-use interfaces for your account, it lists the Agent Access desktop tools and the agent stops with an error that says so. Run metrics record each Claude call as the Agent Access action it stands for (`left_click` with `x`/`y`, not `computer`), and `computer_tool` in the metrics file says which tool shape a run used.
 
+## Tool sequencing
+
+`agentaccess___execute_sequence` runs several tool calls in one request, in order, instead of one call per round-trip. Each action is an object with a `type` naming the tool to run, written the same way you call that tool directly, and that tool's own arguments beside it. Here it opens Notepad from the Run dialog and types a line, all in one call:
+
+```json
+{
+  "actions": [
+    {"type": "agentaccess___key", "keys": "super+r"},
+    {"type": "agentaccess___wait", "duration": 1},
+    {"type": "agentaccess___type_text", "text": "notepad"},
+    {"type": "agentaccess___wait", "duration": 1},
+    {"type": "agentaccess___key", "keys": "Return"},
+    {"type": "agentaccess___wait", "duration": 3},
+    {"type": "agentaccess___type_text", "text": "Opened and typed by one execute_sequence call."}
+  ]
+}
+```
+
+The service runs the actions in order and stops at the first failure. The result's first content block is JSON with `sequence_summary` and `action_results`; a successful call also returns the final screenshot, as an inline image:
+
+```json
+{
+  "sequence_summary": {"submitted": 7, "executed": 7, "succeeded": 7, "guidance": ""},
+  "action_results": [
+    {"index": 0, "action": "key", "status": "success", "duration_ms": 2},
+    {"index": 1, "action": "wait", "status": "success", "duration_ms": 1000},
+    {"index": 2, "action": "type_text", "status": "success", "duration_ms": 2},
+    {"index": 3, "action": "wait", "status": "success", "duration_ms": 1002},
+    {"index": 4, "action": "key", "status": "success", "duration_ms": 3},
+    {"index": 5, "action": "wait", "status": "success", "duration_ms": 3001},
+    {"index": 6, "action": "type_text", "status": "success", "duration_ms": 2}
+  ],
+  "terminal_screenshot": {"status": "success", "duration_ms": 88}
+}
+```
+
+### Limits
+
+Two limits are in the tool schema, so you can read them from `tools/list`: the action count (`execute_sequence`'s `actions.maxItems`, 20) and the per-wait range (`wait`'s `duration` `minimum`/`maximum`, 0.001 to 5 seconds). Three more are stated only in the `execute_sequence` description: all waits together at most 10 seconds, all `agentaccess___type_text` text together at most 10,000 characters, and a 60-second deadline for the whole sequence. `agentaccess___screenshot` and `agentaccess___execute_sequence` cannot be sub-actions.
+
+A sequence over the action count, a wait limit or the typed-text limit is rejected before any action runs: `isError` is set, every action is `skipped`, and `sequence_summary` carries the `stop_reason` and `guidance`. The deadline is checked as the sequence runs instead: once 60 seconds have passed, no further action starts, the rest are `skipped`, and the call returns `isError` with text only (`Deadline reached before action N`). The `stop_reason` of a rejection names the limit:
+
+- `too many actions: 21 > 20`
+- `action 0: wait duration must be a number between 0.001 and 5.0 seconds`
+- `cumulative wait 15.0s exceeds 10.0s`
+- `cumulative type_text length 11000 exceeds 10000`
+
+```json
+{
+  "sequence_summary": {
+    "submitted": 3, "executed": 0, "succeeded": 0, "stopped_at_index": 0,
+    "stop_reason": "CLIENT_ERROR: Rejected before dispatch: cumulative wait 15.0s exceeds 10.0s",
+    "guidance": "Correct the sequence and retry. No desktop action ran, so no screenshot is needed."
+  },
+  "action_results": [
+    {"index": 0, "action": "wait", "status": "skipped", "reason": "sequence rejected before dispatch"},
+    {"index": 1, "action": "wait", "status": "skipped", "reason": "sequence rejected before dispatch"},
+    {"index": 2, "action": "wait", "status": "skipped", "reason": "sequence rejected before dispatch"}
+  ]
+}
+```
+
+Batch only actions you can plan without seeing intermediate results. Connect with a screenshot first so the desktop is attached, then batch. [`tool_sequencing.py`](tool_sequencing.py) is a self-contained example: it opens Notepad and types a note with one `execute_sequence`, reads these limits from `tools/list`, and shows one sequence rejected for each limit.
+
+```bash
+STREAMING_URL=$(scripts/streaming_url.sh)
+python3 tool_sequencing.py "$STREAMING_URL"
+```
+
+For an agent that batches actions itself, run `generic_cua` with the sequencing task. The model opens Notepad with one `execute_sequence`, checks the screenshot it returns, then types a note with a second one:
+
+```bash
+python3 agents/generic_cua/agent.py --streaming-url "$STREAMING_URL" \
+  --task-prompt agents/generic_cua/prompts/sequencing_task_prompt.md
+```
+
 ## Run metrics
 
 Every run of `generic_cua`, `application_validation` and `mcp_forwarding_demo` that finishes writes `agents/<agent>/metrics/metrics_<timestamp>.json` (its log and screenshots sit beside it; a run killed before it finishes leaves a log but no metrics file): each model and tool call with its duration, failed tool calls with their error text, tokens including prompt-cache reads and writes, and the versions of the prompts that have frontmatter. Counts are per model call, not per turn: a turn in which the model uses a tool takes at least two model calls, so per-turn token figures run higher than per-call ones. The other samples (`agent_creator`, `quickstart.py`, the AgentCore sample) write none. To compare two batches of runs, for example before and after a change:
@@ -208,6 +284,7 @@ Press Ctrl-C once to stop the running task: the current action finishes, the met
 ```
 sample-code-for-workspaces-agent-access/
 ├── quickstart.py                # Minimal self-contained stateless example (~100 lines)
+├── tool_sequencing.py           # Self-contained execute_sequence example (batch desktop actions)
 ├── AGENTS.md                    # Developer guide (tools, architecture, IDE setup)
 ├── agents/
 │   ├── agent_creator/          # Interactive agent builder

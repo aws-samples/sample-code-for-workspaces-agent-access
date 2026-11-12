@@ -27,28 +27,55 @@ from typing import Any, Dict, Optional
 # length-and-hash marker so operators can correlate without exposing the
 # actual value.
 _SENSITIVE_INPUT_TOOLS = frozenset({"type_text", "key"})
+# Runs other tools, so its input holds theirs, typed text included.
+_SEQUENCE_TOOL = "execute_sequence"
 
 
 
 def _redact_tool_input(short_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
     """Return a copy of tool_input with sensitive string values redacted.
 
-    For tools in `_SENSITIVE_INPUT_TOOLS`, string values are replaced with
-    `<redacted len=N sha256:XXXXXXXX>`. Non-string values (ints, coords)
+    For tools in `_SENSITIVE_INPUT_TOOLS`, every string value, nested ones included, is replaced
+    with `<redacted len=N sha256:XXXXXXXX>`. Non-string values (ints, coords)
     pass through untouched. Binary payloads (`data`) are always stripped.
+    `execute_sequence` is redacted the same way, except that each action's `type` stays readable.
     """
-    if short_name not in _SENSITIVE_INPUT_TOOLS:
-        return {k: v for k, v in tool_input.items() if k != "data"}
-    redacted: Dict[str, Any] = {}
-    for k, v in tool_input.items():
-        if k == "data":
-            continue
-        if isinstance(v, str) and v:
-            h = hashlib.sha256(v.encode("utf-8")).hexdigest()[:8]
-            redacted[k] = f"<redacted len={len(v)} sha256:{h}>"
-        else:
-            redacted[k] = v
+    kept = {k: v for k, v in tool_input.items() if k != "data"}
+    if short_name == _SEQUENCE_TOOL:
+        return _redact_sequence(kept)
+    return _redact_strings(kept) if short_name in _SENSITIVE_INPUT_TOOLS else kept
+
+
+def _redact_sequence(sequence: Dict[str, Any]) -> Dict[str, Any]:
+    """An execute_sequence input with every string redacted except each action's `type`.
+
+    The model writes all of this input, keys and tool names included, so redacting only its
+    type_text and key actions would still log the text of a misnamed one.
+    """
+    redacted = _redact_strings(sequence)
+    if isinstance(sequence.get("actions"), list):
+        redacted["actions"] = [_redact_action(action) for action in sequence["actions"]]
     return redacted
+
+
+def _redact_action(action: Any) -> Any:
+    """One execute_sequence action with every string redacted except its `type`, so the log shows which tool ran."""
+    redacted = _redact_strings(action)
+    if isinstance(action, dict) and isinstance(action.get("type"), str):
+        redacted["type"] = action["type"]
+    return redacted
+
+
+def _redact_strings(value: Any) -> Any:
+    """`value` with each non-empty string, in nested lists and objects too, replaced by its marker."""
+    if isinstance(value, dict):
+        return {k: _redact_strings(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_strings(v) for v in value]
+    if not isinstance(value, str) or not value:
+        return value
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+    return f"<redacted len={len(value)} sha256:{digest}>"
 
 
 @functools.lru_cache(maxsize=1)

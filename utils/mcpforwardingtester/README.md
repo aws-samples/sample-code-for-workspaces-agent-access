@@ -9,7 +9,7 @@ that runs fine locally can still fail to forward: it may start too slowly, list 
 tools, or ship a config the service rejects. This tool reproduces how the service
 launches and queries your servers, then reports, per server, what works and what to fix.
 
-For the forwarding feature itself, see the [WorkSpaces Applications MCP server docs](https://docs.aws.amazon.com/appstream2/latest/developerguide/agent-access-mcp-server.html#agent-access-mcp-tool-forwarding-details).
+For the forwarding feature itself, see the [WorkSpaces Applications MCP server docs](https://docs.aws.amazon.com/appstream2/latest/developerguide/agent-access-mcp-tool-forwarding-details.html).
 
 ## Install
 

@@ -157,14 +157,29 @@ look.
 > applications that were opened. With **Desktop** stream view the operating system's desktop and
 > taskbar are there instead, and the tool is not listed.
 
-### `wait(seconds)`
-Pause execution (useful for waiting for applications to load). The service does not offer this tool yet; this repo's agents give the model a local `wait` that pauses on the client (`lib/wait_tool.py`) and will use the service's own once it ships. The parameter name is `seconds` until then, so check `tools/list`.
+### `wait(duration)`
+Pause for `duration` seconds (not milliseconds), from 0.001 to 5, without interacting with the desktop. Use it standalone, or as a sub-action inside `execute_sequence` to pace actions.
 
 ```json
-{"name": "wait", "arguments": {"seconds": 5}}
+{"name": "wait", "arguments": {"duration": 5}}
 ```
 
-The service's own tool reference is at <https://docs.aws.amazon.com/appstream2/latest/developerguide/agent-access-mcp-server.html#agent-access-mcp-server-tools>. In `POLLING` connect mode only `connection_status` is listed until the desktop is connected.
+In the default mode (no `--computer-use-interface`), the agents in this repo also give the model their own `wait` tool (`lib/wait_tool.py`), next to the service's `agentaccess___wait`. It takes `seconds` (1 to 100) and pauses on your machine, so it cannot be an action in `execute_sequence`; there, use the service's `wait` with `duration`.
+
+### `execute_sequence(actions)`
+Run several tool calls in one request, in order, instead of one call per round-trip. Each action is an object with a `type` naming the tool to run, written the same way you call that tool directly, and that tool's own arguments beside it. Over the wire that is the prefixed name from `tools/list`, such as `agentaccess___type_text` (see [Tool Name Prefixing](#tool-name-prefixing)); the short names this guide uses, such as `type_text`, are accepted too. Execution stops at the first failure.
+
+```json
+{"name": "execute_sequence", "arguments": {"actions": [
+  {"type": "type_text", "text": "Hello"},
+  {"type": "wait", "duration": 1},
+  {"type": "key", "keys": "Return"}
+]}}
+```
+
+Limits per sequence: at most 20 actions, each `wait` from 0.001 to 5 seconds, all waits at most 10 seconds, and all `type_text` text at most 10,000 characters. A sequence over any of these is rejected before any action runs. The whole sequence also stops after 60 seconds: an action that has not started by then is skipped. `screenshot` and `execute_sequence` cannot be sub-actions. A successful call returns the final screenshot; a rejected, failed or stopped call returns text only, with `sequence_summary.guidance` for the next step. Batch only actions you can plan without seeing intermediate results. Connect with a screenshot first so the desktop is attached, then batch. See [`tool_sequencing.py`](tool_sequencing.py), and [`sequencing_task_prompt.md`](agents/generic_cua/prompts/sequencing_task_prompt.md) for a `generic_cua` task in which the agent batches actions.
+
+The service's own tool reference is at <https://docs.aws.amazon.com/appstream2/latest/developerguide/agent-access-mcp-server-tools.html>. In `POLLING` connect mode only `connection_status` is listed until the desktop is connected.
 
 ## Integration Patterns
 
