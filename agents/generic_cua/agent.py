@@ -88,7 +88,8 @@ def main():
     # An interactive session on a terminal gets the terminal interface (lib/terminal_ui.py).
     ui = None
     if setup["task_prompt"] is None and terminal_ui.wanted(args):
-        ui = terminal_ui.TerminalUI(args.model_id, args.region, setup["agent_logger"])
+        ui = terminal_ui.TerminalUI(args.model_id, args.region, setup["agent_logger"],
+                                    call_namer=setup["agent_logger"].call_namer)
         setup["agent_logger"].display_sink = ui.on_action
 
     # Create agent (with retry) — don't run task yet

@@ -1,27 +1,20 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
-"""Anthropic's ``computer_20251124`` tool on top of the Agent Access desktop tools.
+"""Claude's typed computer tools, for the Anthropic computer-use interfaces.
 
-In the default mode the model sees the service's desktop tools (``left_click``, ``type_text``...)
-as ordinary function tools. With ``--native-computer-tool`` it sees Anthropic's own ``computer``
-tool instead, which Claude is trained on, and this module turns each ``computer`` action into
-the matching Agent Access call:
+With ``--computer-use-interface ANTHROPIC_COMPUTER_20251124`` or ``ANTHROPIC_COMPUTER_TOOLSET_20260801``
+Claude is offered its own typed tool declaration (:data:`TOOL_DEFINITION`, :data:`TOOLSET_DEFINITION`),
+and the service runs each call (``lib/computer_use_interface.py``). This module holds those
+declarations, which tool specs they replace (:func:`is_typed_tool_spec`), and how a call is named in the
+run log and metrics (:func:`as_service_call`): as the Agent Access desktop action it stands for
+(:func:`service_call_for`).
 
-* :func:`translate` is pure: a ``computer`` tool input in, a list of steps out (service calls, a
-  client-side wait, or a text answer), or a :class:`ComputerActionError` saying why it cannot be done.
-* :class:`ComputerTool` is the Strands tool that runs those steps against the MCP client.
-
-The service's screenshots are always 1280 x 720, so coordinates map one to one and no screenshot
-needs rescaling. Service tool reference:
+The service's screenshots are always 1280 x 720, so coordinates map one to one. Service tool reference:
 https://docs.aws.amazon.com/appstream2/latest/developerguide/agent-access-mcp-server.html#agent-access-mcp-server-tools
 """
 
-import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
-
-from strands.types._events import ToolResultEvent
-from strands.types.tools import AgentTool
 
 COMPUTER_TOOL_NAME = "computer"
 COMPUTER_TOOL_TYPE = "computer_20251124"
@@ -48,34 +41,22 @@ TOOLSET_MEMBERS = (
     "screenshot", "left_click", "right_click", "middle_click", "double_click", "triple_click", "left_click_drag",
     "mouse_move", "left_mouse_down", "left_mouse_up", "scroll", "type", "key", "hold_key", "wait")
 _TOOLSET_NAMES = frozenset(TOOLSET_MEMBERS) | {"zoom", "cursor_position"}
-VERSIONS = {"20251124": COMPUTER_TOOL_TYPE, "20260801": TOOLSET_TYPE}
-DEFAULT_VERSION = "20251124"
+COMPUTER_TOOL_VERSION = "20251124"
+TOOLSET_VERSION = "20260801"
+VERSIONS = {COMPUTER_TOOL_VERSION: COMPUTER_TOOL_TYPE, TOOLSET_VERSION: TOOLSET_TYPE}
 
 SERVICE_PREFIX = "agentaccess___"
-# The Agent Access tools the ``computer`` tool replaces; the model is not shown them in this mode.
-DESKTOP_TOOLS = frozenset({
-    "screenshot", "left_click", "double_click", "triple_click", "right_click", "middle_click",
-    "left_click_drag", "left_mouse_down", "left_mouse_up", "move_pointer", "scroll", "type_text",
-    "key", "hold_key", "wait",
-})
 
-TICKS_PER_NOTCH = 120          # the service measures scroll_amount in ticks
-MAX_SCROLL_NOTCHES = 100
-MAX_TYPE_CHARS = 10_000
-HOLD_KEY_SECONDS = (1, 30)
-MAX_KEY_REPEAT = 100
-MAX_WAIT_SECONDS = 100
-
-_CLICKS = {"left_click", "double_click", "triple_click", "right_click", "middle_click"}
-_MODIFIER_ALIASES = {
-    "ctrl": "ctrl", "control": "ctrl", "alt": "alt", "option": "alt", "shift": "shift",
-    "super": "super", "win": "super", "windows": "super", "meta": "super", "cmd": "super", "command": "super",
-}
-_DIRECTIONS = {"up": "Up", "down": "Down", "left": "Left", "right": "Right"}
+# Claude actions named for the Agent Access tool they stand for; the others share the tool's name.
+_ACTION_TOOL_NAMES = {"mouse_move": "move_pointer", "type": "type_text"}
+_POINT_ACTIONS = {"left_click", "double_click", "triple_click", "right_click", "middle_click",
+                  "left_mouse_down", "left_mouse_up", "mouse_move", "scroll"}
+_MODIFIER_ACTIONS = _POINT_ACTIONS - {"mouse_move"}      # `text` holds the keys held during the action
+_NAMED_ACTIONS = _POINT_ACTIONS | {"screenshot", "left_click_drag", "type", "key", "hold_key", "wait"}
 
 
 class ComputerActionError(ValueError):
-    """A ``computer`` tool input the desktop cannot carry out; the message goes back to the model."""
+    """A ``computer`` tool input that does not map to an Agent Access call."""
 
 
 @dataclass
@@ -83,28 +64,6 @@ class ServiceCall:
     """One Agent Access tool call (``name`` without the ``agentaccess___`` prefix)."""
     name: str
     arguments: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ClientWait:
-    """Pause on this side (the service has no ``wait`` tool yet)."""
-    seconds: float
-
-
-@dataclass
-class ClientText:
-    """Answer without touching the desktop."""
-    text: str
-
-
-Step = Any   # ServiceCall | ClientWait | ClientText
-
-
-class Pointer:
-    """Where the mouse last was, as far as this agent knows (the service cannot report it)."""
-
-    def __init__(self):
-        self.position: Optional[Tuple[int, int]] = None
 
 
 def _number(value, what) -> int:
@@ -116,264 +75,101 @@ def _number(value, what) -> int:
         raise ComputerActionError(f"{what} must be a number, got {value!r}") from None
 
 
-def _point(value, what) -> Tuple[int, int]:
-    if isinstance(value, str):     # "[640, 360]" or "640, 360"
+def _parse_point(value, what) -> Tuple[int, int]:
+    """``[x, y]`` as integers, also when a model wrote it as text (``"[640, 360]"``, ``"640, 360"``,
+    ``["640", "360"]``). Bounds are not checked."""
+    if isinstance(value, str):
         value = [part for part in value.strip("[]() ").replace(" ", "").split(",") if part]
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise ComputerActionError(f"{what} must be [x, y]")
-    x, y = _number(value[0], f"{what} x"), _number(value[1], f"{what} y")
-    if not (0 <= x < SCREEN_WIDTH and 0 <= y < SCREEN_HEIGHT):
-        raise ComputerActionError(
-            f"{what} ({x}, {y}) is outside the {SCREEN_WIDTH}x{SCREEN_HEIGHT} screen "
-            f"(x 0-{SCREEN_WIDTH - 1}, y 0-{SCREEN_HEIGHT - 1})")
-    return x, y
+    return _number(value[0], f"{what} x"), _number(value[1], f"{what} y")
 
 
-def _modifiers(text) -> Optional[str]:
-    """The ``text`` input of a click or scroll (keys held during it) as the service's ``modifiers``."""
-    if text is None or (isinstance(text, str) and not text.strip()):
+def is_text_point(value) -> bool:
+    """True for a point a model wrote as text: a string, or a list holding a string."""
+    return isinstance(value, str) or (isinstance(value, list) and any(isinstance(part, str) for part in value))
+
+
+def point_from_text(value) -> Optional[List[int]]:
+    """A point a model wrote as text (:func:`is_text_point`) as ``[x, y]`` integers, or None when it
+    is not two numbers. Bounds are not checked: the service checks them."""
+    try:
+        return list(_parse_point(value, "point"))
+    except ComputerActionError:
         return None
-    if not isinstance(text, str):
-        raise ComputerActionError("text (modifier keys) must be a string such as 'ctrl' or 'ctrl+shift'")
-    parts = [p.strip().lower() for p in text.split("+") if p.strip()]
-    unknown = [p for p in parts if p not in _MODIFIER_ALIASES]
-    if unknown or not parts:
-        raise ComputerActionError(
-            f"unsupported modifier {unknown or text!r}: use ctrl, alt, shift or super, joined by '+'")
-    return "+".join(dict.fromkeys(_MODIFIER_ALIASES[p] for p in parts))
 
 
-def _target(tool_input, pointer, action) -> Tuple[int, int]:
-    """The ``coordinate`` of an action, else the pointer's last position."""
-    if tool_input.get("coordinate") is not None:
-        return _point(tool_input["coordinate"], "coordinate")
-    if pointer is not None and pointer.position is not None:
-        return pointer.position
-    raise ComputerActionError(f"{action} needs a coordinate [x, y]")
+def _xy(tool_input, key, action) -> Tuple[int, int]:
+    if tool_input.get(key) is None:
+        raise ComputerActionError(f"{action} needs a {key} [x, y]")
+    return _parse_point(tool_input[key], key)
 
 
-def _with_modifiers(arguments, tool_input):
-    modifiers = _modifiers(tool_input.get("text"))
-    if modifiers:
-        arguments["modifiers"] = modifiers
-    return arguments
+def service_call_for(tool_input) -> ServiceCall:
+    """The Agent Access call one Claude ``computer`` tool input stands for, to name it in the run log.
 
-
-def _text_input(tool_input, action) -> str:
-    text = tool_input.get("text")
-    if not isinstance(text, str) or not text:
-        raise ComputerActionError(f"{action} needs non-empty text")
-    return text
-
-
-def translate(tool_input, pointer: Optional[Pointer] = None) -> List[Step]:
-    """Turn one ``computer`` tool input into the steps that carry it out.
-
-    ``pointer`` supplies the position for actions given without a ``coordinate`` and is updated
-    by the caller after the steps succeed (see :func:`pointer_after`). Raises
-    :class:`ComputerActionError` with a message for the model when the action cannot be done.
+    Only names and arguments are mapped, without limits: the service converts and checks the call
+    itself. Raises :class:`ComputerActionError` when there is no action, the action has no Agent Access
+    counterpart, or a coordinate it needs is missing or is not two numbers.
     """
     if not isinstance(tool_input, dict) or not isinstance(tool_input.get("action"), str):
         raise ComputerActionError("the computer tool needs an 'action'")
     action = tool_input["action"].strip().lower()
+    if action not in _NAMED_ACTIONS:
+        raise ComputerActionError(f"no Agent Access action for {tool_input['action']!r}")
 
-    if action == "screenshot":
-        return [ServiceCall("screenshot")]
-    if action in _CLICKS:
-        x, y = _target(tool_input, pointer, action)
-        return [ServiceCall(action, _with_modifiers({"x": x, "y": y}, tool_input))]
-    if action == "mouse_move":
-        x, y = _point(tool_input.get("coordinate"), "coordinate")
-        return [ServiceCall("move_pointer", {"x": x, "y": y})]
-    if action in ("left_mouse_down", "left_mouse_up"):
-        x, y = _target(tool_input, pointer, action)
-        return [ServiceCall(action, _with_modifiers({"x": x, "y": y}, tool_input))]
+    arguments: Dict[str, Any] = {}
+    if action in _POINT_ACTIONS:
+        arguments["x"], arguments["y"] = _xy(tool_input, "coordinate", action)
     if action == "left_click_drag":
-        if tool_input.get("start_coordinate") is not None:
-            start = _point(tool_input["start_coordinate"], "start_coordinate")
-        elif pointer is not None and pointer.position is not None:
-            start = pointer.position
-        else:
-            raise ComputerActionError("left_click_drag needs a start_coordinate [x, y]")
-        end = _point(tool_input.get("coordinate"), "coordinate")
-        return [ServiceCall("left_click_drag", {"start_x": start[0], "start_y": start[1], "end_x": end[0], "end_y": end[1]})]
+        arguments["start_x"], arguments["start_y"] = _xy(tool_input, "start_coordinate", action)
+        arguments["end_x"], arguments["end_y"] = _xy(tool_input, "coordinate", action)
     if action == "scroll":
-        x, y = _target(tool_input, pointer, action)
-        direction = _DIRECTIONS.get(str(tool_input.get("scroll_direction", "")).strip().lower())
-        if direction is None:
-            raise ComputerActionError("scroll_direction must be up, down, left or right")
-        notches = _number(tool_input.get("scroll_amount", 1), "scroll_amount")
-        if not 1 <= notches <= MAX_SCROLL_NOTCHES:
-            raise ComputerActionError(f"scroll_amount must be between 1 and {MAX_SCROLL_NOTCHES} wheel notches")
-        return [ServiceCall("scroll", _with_modifiers(
-            {"x": x, "y": y, "scroll_direction": direction, "scroll_amount": notches * TICKS_PER_NOTCH}, tool_input))]
+        arguments.update({key: tool_input[key] for key in ("scroll_direction", "scroll_amount") if key in tool_input})
+    if action in _MODIFIER_ACTIONS and tool_input.get("text"):
+        arguments["modifiers"] = tool_input["text"]
     if action == "type":
-        text = _text_input(tool_input, "type")
-        if len(text) > MAX_TYPE_CHARS:
-            raise ComputerActionError(f"type is limited to {MAX_TYPE_CHARS} characters; split the text")
-        return [ServiceCall("type_text", {"text": text})]
-    if action == "key":
-        keys = _text_input(tool_input, "key")
-        repeat = _number(tool_input.get("repeat", 1), "repeat")
-        if not 1 <= repeat <= MAX_KEY_REPEAT:
-            raise ComputerActionError(f"repeat must be between 1 and {MAX_KEY_REPEAT}")
-        return [ServiceCall("key", {"keys": keys}) for _ in range(repeat)]
-    if action == "hold_key":
-        keys = _text_input(tool_input, "hold_key")
-        seconds = _number(tool_input.get("duration"), "duration")
-        low, high = HOLD_KEY_SECONDS
-        if not low <= seconds <= high:
-            raise ComputerActionError(f"hold_key duration must be between {low} and {high} seconds")
-        return [ServiceCall("hold_key", {"keys": keys, "duration": seconds})]
+        arguments["text"] = tool_input.get("text")
+    if action in ("key", "hold_key"):
+        arguments["keys"] = tool_input.get("text")
+    if action == "hold_key" and "duration" in tool_input:
+        arguments["duration"] = tool_input["duration"]
     if action == "wait":
-        seconds = _number(tool_input.get("duration"), "duration")
-        if not 0 <= seconds <= MAX_WAIT_SECONDS:
-            raise ComputerActionError(f"wait duration must be between 0 and {MAX_WAIT_SECONDS} seconds")
-        return [ClientWait(seconds)]
-    if action == "cursor_position":
-        if pointer is not None and pointer.position is not None:
-            return [ClientText("X=%d, Y=%d" % pointer.position)]
-        raise ComputerActionError("the pointer position is not known yet: move the mouse or click first")
-    if action == "zoom":
-        raise ComputerActionError("zoom is not available; take a screenshot instead")
-    raise ComputerActionError(f"unknown action {tool_input['action']!r}")
+        arguments["seconds"] = tool_input.get("duration")
+    return ServiceCall(_ACTION_TOOL_NAMES.get(action, action), arguments)
 
 
-def pointer_after(step: Step) -> Optional[Tuple[int, int]]:
-    """Where the pointer ends up after a service call, or None if the step does not move it."""
-    if not isinstance(step, ServiceCall):
-        return None
-    args = step.arguments
-    if "end_x" in args:
-        return args["end_x"], args["end_y"]
-    if "x" in args and "y" in args:
-        return args["x"], args["y"]
-    return None
+def is_anthropic_computer_call(name: str) -> bool:
+    """True for a call to Claude's typed computer tool, in either version: ``computer`` or a toolset member."""
+    return name == COMPUTER_TOOL_NAME or name in _TOOLSET_NAMES
 
 
-def is_desktop_spec(name: str, version: str = DEFAULT_VERSION) -> bool:
-    """True for a tool spec the model must not see in native mode: ``computer`` itself (it is
-    declared as the typed tool), the toolset's member tools when that version is used, and the
-    Agent Access desktop tools they replace."""
-    if name == COMPUTER_TOOL_NAME:
-        return True
-    if version == "20260801" and name in _TOOLSET_NAMES:
-        return True
-    prefix, _, short = name.partition("___")
-    return prefix == SERVICE_PREFIX.rstrip("_") and short in DESKTOP_TOOLS
+def is_typed_tool_spec(name: str, version: str) -> bool:
+    """True for a tool spec the typed tool declaration replaces: ``computer`` itself, and the
+    toolset's member tools when that version is used."""
+    return is_anthropic_computer_call(name) and (name == COMPUTER_TOOL_NAME or version == TOOLSET_VERSION)
 
 
 def as_service_call(name: str, tool_input) -> Tuple[str, Dict[str, Any]]:
     """``(short tool name, input)`` as the run log and metrics record it.
 
-    A ``computer`` call is reported as the service call it becomes, so a run's metrics look the same
-    with and without the native tool (``left_click`` with ``x``/``y``, not ``computer``). An input
-    that cannot be translated is reported as ``computer:<action>``.
+    A ``computer`` call, or a toolset member call, is reported as the Agent Access call it stands for
+    (``left_click`` with ``x``/``y``, not ``computer``), so metrics compare across interfaces. An input
+    that names no desktop action is reported as ``computer:<action>``.
     """
     short = name.rsplit("___", 1)[-1]
     if name == "wait" and isinstance(tool_input, dict) and "seconds" in tool_input:
-        return "wait", {"seconds": tool_input["seconds"]}  # the local wait tool (lib/wait_tool.py), not the toolset's
+        return "wait", {"seconds": tool_input["seconds"]}  # this agent's own wait (seconds); the toolset's takes duration
     if "___" not in name and name in _TOOLSET_NAMES:      # a member of the toolset: "left_click", "type"...
         tool_input = {"action": name, **(tool_input if isinstance(tool_input, dict) else {})}
         short = COMPUTER_TOOL_NAME
     if short != COMPUTER_TOOL_NAME:
         return short, tool_input if isinstance(tool_input, dict) else {}
     try:
-        steps = translate(tool_input)
+        call = service_call_for(tool_input)
     except ComputerActionError:
         action = tool_input.get("action") if isinstance(tool_input, dict) else None
         return f"computer:{action}", {}
     except Exception:  # a log line must never break a run
         return COMPUTER_TOOL_NAME, {}
-    first = steps[0]
-    if isinstance(first, ServiceCall):
-        return first.name, dict(first.arguments)
-    if isinstance(first, ClientWait):
-        return "wait", {"seconds": first.seconds}
-    return "cursor_position", {}
-
-
-def _result(tool_use_id, status, text):
-    return {"toolUseId": tool_use_id, "status": status, "content": [{"text": text}]}
-
-
-class ComputerTool(AgentTool):
-    """The ``computer`` tool: runs :func:`translate`'s steps against the Agent Access MCP client.
-
-    With ``member`` set it is one tool of the 20260801 toolset instead (``left_click``, ``type``...):
-    the same translation, with the tool's name as the action.
-    """
-
-    def __init__(self, mcp_client, timeout=None, member=None, pointer=None):
-        super().__init__()
-        self._mcp = mcp_client
-        self._timeout = timeout
-        self._member = member
-        self.pointer = pointer or Pointer()
-
-    @property
-    def tool_name(self) -> str:
-        return self._member or COMPUTER_TOOL_NAME
-
-    @property
-    def tool_spec(self):
-        # Never sent to the model (the typed definition replaces it): Strands wants a spec to register.
-        return {
-            "name": self.tool_name,
-            "description": "Control the desktop with the mouse and keyboard (Anthropic computer tool).",
-            "inputSchema": {"json": {"type": "object", "properties": {"action": {"type": "string"}},
-                                     "required": [] if self._member else ["action"]}},
-        }
-
-    @property
-    def tool_type(self) -> str:
-        return "python"
-
-    async def stream(self, tool_use, invocation_state, **kwargs):
-        tool_use_id = tool_use["toolUseId"]
-        cancel = getattr(invocation_state.get("agent"), "_cancel_signal", None)
-        tool_input = tool_use.get("input")
-        if self._member:
-            tool_input = {"action": self._member, **(tool_input if isinstance(tool_input, dict) else {})}
-        try:
-            steps = translate(tool_input, self.pointer)
-        except ComputerActionError as e:
-            yield ToolResultEvent(_result(tool_use_id, "error", str(e)))
-            return
-
-        result = _result(tool_use_id, "success", "OK")
-        for step in steps:
-            if isinstance(step, ClientWait):
-                await _cancellable_sleep(step.seconds, cancel)
-                result = _result(tool_use_id, "success", f"Waited {step.seconds:g} seconds")
-            elif isinstance(step, ClientText):
-                result = _result(tool_use_id, "success", step.text)
-            else:
-                result = await self._mcp.call_tool_async(
-                    tool_use_id=tool_use_id, name=SERVICE_PREFIX + step.name, arguments=step.arguments,
-                    read_timeout_seconds=self._timeout, cancel_signal=cancel)
-                if result.get("status") == "error":
-                    break
-            moved = pointer_after(step)
-            if moved is not None:
-                self.pointer.position = moved
-        yield ToolResultEvent(result)
-
-
-def build_computer_tools(mcp_client, timeout=None, version=DEFAULT_VERSION):
-    """The Strands tools that carry out the model's computer actions for the chosen tool ``version``."""
-    if version == "20260801":
-        pointer = Pointer()
-        return [ComputerTool(mcp_client, timeout, member=name, pointer=pointer) for name in TOOLSET_MEMBERS]
-    if version != DEFAULT_VERSION:
-        raise ValueError(f"unknown computer tool version {version!r}; choose one of {sorted(VERSIONS)}")
-    return [ComputerTool(mcp_client, timeout)]
-
-
-async def _cancellable_sleep(seconds, cancel_signal):
-    """Sleep ``seconds``, returning early if the run is cancelled (Ctrl-C, a limit)."""
-    remaining = float(seconds)
-    while remaining > 0 and not (cancel_signal is not None and cancel_signal.is_set()):
-        step = min(0.2, remaining)
-        await asyncio.sleep(step)
-        remaining -= step
+    return call.name, dict(call.arguments)

@@ -90,11 +90,12 @@ class TerminalUI:
     """Renders one interactive session. Pass :meth:`callback_handler` as the agent's callback handler,
     the instance itself as a hook provider, and :meth:`on_action` as the run logger's ``display_sink``."""
 
-    def __init__(self, model_id, region, agent_logger=None, console=None):
+    def __init__(self, model_id, region, agent_logger=None, console=None, call_namer=as_service_call):
         self.console = console or Console(highlight=False)
         self._model_id = model_id
         self._region = region
         self._logger = agent_logger
+        self._call_namer = call_namer      # names a tool call for the status line (lib/computer_use_interface.py)
         self._lock = threading.Lock()
         self._text = ""
         self._label = "Thinking"
@@ -131,7 +132,7 @@ class TerminalUI:
 
     def _before_tool_call(self, event):
         self._flush_text()
-        name, _ = as_service_call(event.tool_use.get("name", "tool"), event.tool_use.get("input"))
+        name, _ = self._call_namer(event.tool_use.get("name", "tool"), event.tool_use.get("input"))
         with self._lock:
             self._label = f"Running {name}"
 

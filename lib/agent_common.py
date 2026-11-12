@@ -15,6 +15,7 @@ import json
 import os
 import sys
 
+from . import computer_use_interface
 from .strands_logger import StrandsAgentLogger, parse_prompt_frontmatter
 from .screenshot_pruning_manager import (
     DEFAULT_KEEP_SCREENSHOTS,
@@ -24,7 +25,7 @@ from .screenshot_pruning_manager import (
 )
 
 # Re-exports from sub-modules
-from .computer_tool import DEFAULT_VERSION, VERSIONS
+from .computer_tool import VERSIONS
 from .agent_factory import (
     AUTH_SAML,
     AUTH_STREAMING_URL,
@@ -179,12 +180,13 @@ def create_base_parser(description):
                        help='Bedrock prompt caching for Claude models (default: on; --no-prompt-cache turns it off)')
     parser.add_argument('--max-tokens', type=int, default=None, metavar='N',
                        help='Maximum tokens per model response (default: the model default)')
-    parser.add_argument('--native-computer-tool', action=argparse.BooleanOptionalAction, default=False,
-                       help="Offer Claude Anthropic's computer_20251124 tool instead of the individual "
-                            'desktop tools (Claude models only; implies the computer-use beta header)')
-    parser.add_argument('--computer-tool-version', choices=sorted(VERSIONS), default=DEFAULT_VERSION,
-                       help='With --native-computer-tool: the Anthropic computer tool version, 20251124 '
-                            '(beta header, one computer tool; default) or 20260801 (the newer toolset, no header)')
+    parser.add_argument('--computer-use-interface', metavar='INTERFACE',
+                       choices=computer_use_interface.COMPUTER_USE_INTERFACES, default=None,
+                       help='Ask the service for this computer-use interface: it lists the '
+                            "interface's tools and converts their calls to desktop actions. With "
+                            'ANTHROPIC_COMPUTER_20251124 and ANTHROPIC_COMPUTER_TOOLSET_20260801 Claude is '
+                            'offered its typed computer tool (Claude models only). One of: '
+                            + ', '.join(computer_use_interface.COMPUTER_USE_INTERFACES))
     parser.add_argument('--effort', choices=['low', 'medium', 'high'], default=None,
                        help='Reasoning effort for Claude models that support it (sends adaptive thinking '
                             'and output_config.effort; default: the model default)')
@@ -248,13 +250,18 @@ def resolve_session_auth(parser, args):
 resolve_streaming_url = resolve_session_auth
 
 
-def create_logger(agent_dir, task_prompt, model_id):
-    """Create and configure a StrandsAgentLogger."""
+def create_logger(agent_dir, task_prompt, model_id, interface=None):
+    """Create and configure a StrandsAgentLogger.
+
+    ``interface`` is the ``--computer-use-interface`` value; it picks how tool calls are named in the
+    log and metrics (``computer_use_interface.call_namer``).
+    """
     logger = StrandsAgentLogger(
         log_dir=os.path.join(agent_dir, "logs"),
         metrics_dir=os.path.join(agent_dir, "metrics"),
         screenshots_dir=os.path.join(agent_dir, "screenshots"),
         quiet_display=True,
+        call_namer=computer_use_interface.call_namer(interface),
     )
     logger.set_task_info(task_prompt[:200], model_id)
     return logger
@@ -280,9 +287,9 @@ def print_banner(title, description, model_id, args):
     sys.stdout.write(f"  Region: {args.region}\n")
     if get_auth_mode(args) == AUTH_SAML:
         sys.stdout.write("  Auth: Domain Join (SAML assertion)\n")
-    if getattr(args, 'native_computer_tool', False):
-        version = VERSIONS.get(getattr(args, 'computer_tool_version', DEFAULT_VERSION), "?")
-        sys.stdout.write(f"  Computer tool: {version} (native), screen 1280x720\n")
+    interface = computer_use_interface.requested_interface(args)
+    if interface:
+        sys.stdout.write(f"  Computer-use interface: {interface} (converted by the service)\n")
     sys.stdout.write("  " + "─" * 36 + "\n")
     if sys.stderr.isatty():  # the clear above erased what argument handling warned about
         for message in pending_warnings():
@@ -298,35 +305,6 @@ def finalize_and_exit(agent_logger, success, error, result=None):
     print(f"📊 Metrics: {metrics_file}")
     print(f"📝 Logs: {agent_logger.log_file}")
     return 0 if success else 1
-
-
-NATIVE_COMPUTER_NOTE = """
-
-=== NATIVE COMPUTER TOOL ===
-In this session you control the desktop with one tool named `computer`, not with the individual desktop tools described above. Use the `computer` action that matches each of them:
-- `screenshot`
-- `left_click`, `right_click`, `middle_click`, `double_click`, `triple_click`: `coordinate` [x, y]; `text` holds modifier keys such as "ctrl" or "ctrl+shift"
-- `left_click_drag`: `start_coordinate` and `coordinate` (the end point)
-- `mouse_move`, `left_mouse_down`, `left_mouse_up`: `coordinate`
-- `scroll`: `coordinate`, `scroll_direction` (up, down, left, right), `scroll_amount` in wheel notches (not ticks: ignore the tick numbers above)
-- `type`: `text`; `key`: `text`, optional `repeat`; `hold_key`: `text`, `duration` 1 to 30 seconds
-- `wait`: `duration` in seconds
-`zoom` is not available, and `cursor_position` only reports the last position you set. The screen is 1280 x 720; coordinates are [x, y] pixels. Any other tools in your list (for example `forwarded___` tools) work as described above.
-"""
-
-
-NATIVE_TOOLSET_NOTE = """
-
-=== NATIVE COMPUTER TOOLS ===
-In this session you control the desktop with the computer tools that are in your tool list (`screenshot`, `left_click`, `type`, `key`, `scroll`, ...), not with the individual desktop tools described above. Each one matches a tool above:
-- `left_click`, `right_click`, `middle_click`, `double_click`, `triple_click`: `coordinate` [x, y]; `text` holds modifier keys such as "ctrl" or "ctrl+shift"
-- `left_click_drag`: `start_coordinate` and `coordinate` (the end point)
-- `mouse_move`, `left_mouse_down`, `left_mouse_up`: `coordinate`
-- `scroll`: `coordinate`, `scroll_direction` (up, down, left, right), `scroll_amount` in wheel notches (not ticks: ignore the tick numbers above)
-- `type`: `text`; `key`: `text`, optional `repeat`; `hold_key`: `text`, `duration` 1 to 30 seconds
-- `wait`: `duration` in seconds
-The screen is 1280 x 720; coordinates are [x, y] pixels. Any other tools in your list (for example `forwarded___` tools) work as described above.
-"""
 
 
 def resolve_prune_batch(args):
@@ -358,14 +336,14 @@ def setup_standard_agent(args, agent_dir, skill_filename=None, skill_label=None,
         except Exception as e:
             print(f"  Warning: Could not load skill: {e}")
 
-    native = bool(getattr(args, 'native_computer_tool', False))
-    version = getattr(args, 'computer_tool_version', DEFAULT_VERSION)
-    if native:
-        system_prompt += NATIVE_TOOLSET_NOTE if version == "20260801" else NATIVE_COMPUTER_NOTE
+    interface = computer_use_interface.requested_interface(args)
+    system_prompt += computer_use_interface.prompt_note(args)     # the service's tools differ from the prompt's
+    typed_version = computer_use_interface.typed_tool_version(interface)
 
-    agent_logger = create_logger(agent_dir, task_prompt or "", args.model_id)
+    agent_logger = create_logger(agent_dir, task_prompt or "", args.model_id, interface)
     agent_logger.set_prompt_versions(sys_ver, task_ver)
-    agent_logger.metrics["computer_tool"] = VERSIONS[version] if native else "function_tools"
+    agent_logger.metrics["computer_tool"] = VERSIONS[typed_version] if typed_version else "function_tools"
+    agent_logger.metrics["computer_use_interface"] = interface
     agent_logger.metrics["effort"] = getattr(args, 'effort', None)
 
     model = create_model(args)

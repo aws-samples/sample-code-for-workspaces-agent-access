@@ -32,6 +32,7 @@ from strands.types.exceptions import MCPClientInitializationError
 
 from .domain_join_auth import DomainJoinAuth, build_meta
 from .sigv4_signer import SigV4HttpAuth
+from .computer_use_interface import interface_headers, requested_interface
 
 MCP_PROTOCOL_STATELESS = "stateless"
 MCP_PROTOCOL_STATEFUL = "stateful"
@@ -131,6 +132,11 @@ EXPIRE_SESSION_HEADER = "X-Amzn-AgentAccess-Expire-Streaming-Session-On-Delete"
 def session_headers(args):
     """Headers every MCP request carries besides authentication (today: expire the session on exit)."""
     return {EXPIRE_SESSION_HEADER: "true"} if getattr(args, 'expire_session_on_exit', False) else {}
+
+
+def request_headers(args):
+    """``session_headers`` plus the computer-use interface header (``lib/computer_use_interface.py``) when one is requested."""
+    return {**session_headers(args), **interface_headers(args)}
 
 
 # How long one HTTP exchange with the service may take, the wait for its reply included. The default
@@ -298,14 +304,14 @@ def _streamable_http(endpoint, headers, auth):
 
 
 def _resolve_protocol(args):
-    """The MCP protocol to use: ``--mcp-protocol`` (default stateless), stateful for ``--native-computer-tool``
+    """The MCP protocol to use: ``--mcp-protocol`` (default stateless), stateful for ``--computer-use-interface``
     and for ``--expire-session-on-exit``."""
     protocol = getattr(args, 'mcp_protocol', None) or MCP_PROTOCOL_STATELESS
     if protocol not in MCP_PROTOCOLS:
         raise RuntimeError(f"--mcp-protocol must be one of {', '.join(MCP_PROTOCOLS)}.")
-    if protocol == MCP_PROTOCOL_STATELESS and getattr(args, 'native_computer_tool', False):
-        # The native computer tool's typed declaration has no mcpSessionId argument, which stateless MCP needs.
-        print("  MCP protocol: stateful (--native-computer-tool does not support stateless MCP yet)")
+    if protocol == MCP_PROTOCOL_STATELESS and requested_interface(args):
+        # The interface's typed tool declaration has no mcpSessionId argument, which stateless MCP needs.
+        print("  MCP protocol: stateful (--computer-use-interface does not support stateless MCP yet)")
         protocol = MCP_PROTOCOL_STATEFUL
     if protocol == MCP_PROTOCOL_STATELESS and getattr(args, 'expire_session_on_exit', False):
         # The expire header acts on the session DELETE, and stateless MCP sends no DELETE.
@@ -350,7 +356,7 @@ def create_mcp_client_factory(args, root_dir=None):
         sys.stdout.flush()
 
         auth = DomainJoinAuth(auth, build_meta(saml_assertion, stack_arn))
-        headers = session_headers(args)
+        headers = request_headers(args)
     else:
         # Standard path: streaming URL as header
         streaming_url = getattr(args, 'streaming_url', None) or ""
@@ -360,7 +366,7 @@ def create_mcp_client_factory(args, root_dir=None):
         sys.stdout.flush()
         headers = {
             "X-Amzn-AgentAccess-Streaming-Session-Url": streaming_url,
-            **session_headers(args),
+            **request_headers(args),
         }
 
     connect = _streamable_http(endpoint, headers, auth)
