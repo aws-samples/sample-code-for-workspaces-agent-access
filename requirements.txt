@@ -121,13 +121,13 @@ prompt-toolkit==3.0.53
     # via -r requirements.in
 pycparser==3.11 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
-pydantic==2.13.3
+pydantic==2.14.3
     # via
     #   mcp
     #   mcp-types
     #   openai
     #   strands-agents
-pydantic-core==2.46.3
+pydantic-core==2.50.4
     # via pydantic
 pygments==2.20.0
     # via rich
@@ -195,7 +195,7 @@ typing-extensions==4.16.0
     #   strands-agents
     #   typing-inspection
     #   uvicorn
-typing-inspection==0.4.2
+typing-inspection==0.4.5
     # via
     #   mcp
     #   pydantic
