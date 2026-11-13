@@ -177,6 +177,52 @@ def _result_text(result) -> str:
     ).strip()
 
 
+def _image_bytes(result) -> Optional[bytes]:
+    """The bytes of the first image in a tool result, or None. An image that does not decode counts as none."""
+    content = []
+    if isinstance(result, dict):
+        content = result.get("content", [])
+    elif hasattr(result, 'content'):
+        content = result.content
+    try:
+        for item in content:
+            raw_bytes = None
+            if isinstance(item, dict):
+                # Format 1: {"type": "image", "data": "base64..."} (custom agent)
+                if item.get("type") == "image" and "data" in item:
+                    raw_bytes = base64.b64decode(item["data"])
+                # Format 2: {"image": {"format": "png", "source": {"bytes": b'...'}}} (MCP/Strands)
+                elif "image" in item:
+                    img = item["image"]
+                    if isinstance(img, dict):
+                        source = img.get("source", {})
+                        if isinstance(source, dict) and "bytes" in source:
+                            raw_bytes = source["bytes"]
+                        elif "data" in img:
+                            raw_bytes = base64.b64decode(img["data"])
+            if raw_bytes:
+                return raw_bytes
+    except (TypeError, ValueError):  # content that is not a list of blocks, or base64 that does not decode
+        pass
+    return None
+
+
+def _sequence_line(result, tool_input: Dict[str, Any]) -> str:
+    """The display line for an execute_sequence call: how many of its actions succeeded.
+
+    The counts come from the sequence_summary JSON in the result; without one, the number of actions sent.
+    """
+    blocks = result.get("content", []) if isinstance(result, dict) else []
+    for block in blocks:
+        try:
+            summary = json.loads(block["text"])["sequence_summary"]
+            return f"⛓️ Sequence: {summary['succeeded']}/{summary['submitted']} actions"
+        except (KeyError, TypeError, ValueError):  # not the summary block
+            continue
+    actions = tool_input.get("actions")
+    return f"⛓️ Sequence ({len(actions) if isinstance(actions, list) else '?'} actions)"
+
+
 def _tool_use_name(block, call_namer=as_service_call) -> Optional[str]:
     """Name of the tool a message content block asks for (Strands ``toolUse``; also the raw ``tool_use`` form)."""
     if not isinstance(block, dict):
@@ -437,6 +483,11 @@ class StrandsAgentLogger:
             self.show_action("ℹ️ Session info")
         elif short_name == "toggle_app_switcher":
             self.show_action("🗂️ App switcher")
+        elif short_name == _SEQUENCE_TOOL:
+            self.show_action(_sequence_line(event.result, tool_input))
+            if success and _image_bytes(event.result):  # the screenshot taken after its last action
+                self.screenshot_counter += 1
+                self._save_screenshot(event.result)
         else:
             self.show_action(f"🔧 {tool_name}")
         if self.display_sink is not None:
@@ -575,39 +626,15 @@ class StrandsAgentLogger:
     def _save_screenshot(self, result):
         """Save screenshot image data from a tool result."""
         try:
-            content = []
-            if isinstance(result, dict):
-                content = result.get("content", [])
-            elif hasattr(result, 'content'):
-                content = result.content
-
-            for item in content:
-                raw_bytes = None
-
-                if isinstance(item, dict):
-                    # Format 1: {"type": "image", "data": "base64..."} (custom agent)
-                    if item.get("type") == "image" and "data" in item:
-                        raw_bytes = base64.b64decode(item["data"])
-
-                    # Format 2: {"image": {"format": "png", "source": {"bytes": b'...'}}} (MCP/Strands)
-                    elif "image" in item:
-                        img = item["image"]
-                        if isinstance(img, dict):
-                            source = img.get("source", {})
-                            if isinstance(source, dict) and "bytes" in source:
-                                raw_bytes = source["bytes"]
-                            elif "data" in img:
-                                raw_bytes = base64.b64decode(img["data"])
-
-                if raw_bytes:
-                    screenshot_id = f"{self.session_id}_screenshot_{self.screenshot_counter:03d}"
-                    path = os.path.join(self.screenshot_dir, f"{screenshot_id}.png")
-                    with open(path, 'wb') as f:
-                        f.write(raw_bytes)
-                    self.file_logger.debug(f"💾 Screenshot saved: {path} (ID: {screenshot_id})")
-                    return
-
-            self.file_logger.warning("No image data found in screenshot result")
+            raw_bytes = _image_bytes(result)
+            if not raw_bytes:
+                self.file_logger.warning("No readable image data in screenshot result")
+                return
+            screenshot_id = f"{self.session_id}_screenshot_{self.screenshot_counter:03d}"
+            path = os.path.join(self.screenshot_dir, f"{screenshot_id}.png")
+            with open(path, 'wb') as f:
+                f.write(raw_bytes)
+            self.file_logger.debug(f"💾 Screenshot saved: {path} (ID: {screenshot_id})")
         except Exception as e:
             self.file_logger.warning(f"Could not save screenshot: {e}")
 

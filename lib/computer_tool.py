@@ -10,7 +10,7 @@ run log and metrics (:func:`as_service_call`): as the Agent Access desktop actio
 (:func:`service_call_for`).
 
 The service's screenshots are always 1280 x 720, so coordinates map one to one. Service tool reference:
-https://docs.aws.amazon.com/appstream2/latest/developerguide/agent-access-mcp-server.html#agent-access-mcp-server-tools
+https://docs.aws.amazon.com/appstream2/latest/developerguide/agent-access-mcp-server-tools.html
 """
 
 from dataclasses import dataclass, field
