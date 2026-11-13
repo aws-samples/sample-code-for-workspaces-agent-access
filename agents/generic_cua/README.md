@@ -43,6 +43,10 @@ python3 agents/generic_cua/agent.py --streaming-url "<STREAMING_URL>"
 python3 agents/generic_cua/agent.py --streaming-url "<STREAMING_URL>" \
   --task-prompt agents/generic_cua/prompts/task_prompt.md
 
+# Tool sequencing — the agent batches actions with agentaccess___execute_sequence
+python3 agents/generic_cua/agent.py --streaming-url "<STREAMING_URL>" \
+  --task-prompt agents/generic_cua/prompts/sequencing_task_prompt.md
+
 # With a custom system prompt and skill file
 python3 agents/generic_cua/agent.py --streaming-url "<STREAMING_URL>" \
   --system-prompt agents/generic_cua/prompts/system_prompt.md \
@@ -113,7 +117,8 @@ generic_cua/
 ├── agent.py              # Agent orchestrator
 ├── prompts/
 │   ├── system_prompt.md  # Default generic desktop control prompt
-│   └── task_prompt.md    # Example task prompt (Notepad)
+│   ├── task_prompt.md    # Example task prompt (Notepad)
+│   └── sequencing_task_prompt.md  # Example task prompt (tool sequencing)
 ├── skills/
 │   └── computer-use-skill.json  # Example skill file (Notepad)
 ├── logs/                 # Runtime logs
