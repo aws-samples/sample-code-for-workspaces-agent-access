@@ -169,7 +169,7 @@ starlette==1.8.0 ; python_full_version >= '3.11'
     #   sse-starlette
 strands-agents==1.58.1
     # via -r requirements.in
-tqdm==4.67.3
+tqdm==4.70.1
     # via openai
 truststore==0.10.5 ; sys_platform != 'emscripten'
     # via
