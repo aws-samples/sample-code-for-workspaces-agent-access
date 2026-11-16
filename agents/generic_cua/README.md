@@ -76,6 +76,7 @@ Each command above is one logical line: when you continue a line with `\`, the b
 | `--task-prompt` | No | None | Path to a task prompt file; triggers single-shot mode |
 | `--skill` | No | None | Path to a skill JSON file to append to the system prompt |
 | `--plain` | No | off | Plain text output in REPL mode instead of the interactive terminal |
+| `--save-replay` | No | off | After the session ends, wait for its Replay Session recording and download it to `recordings/<session-id>/`. The bucket is the `S3BucketArn` of the stack the streaming URL (or `--stack-arn`) names (see "Replay Session" in the repo README) |
 | `--model-id` | No | `global.anthropic.claude-sonnet-5-5` | Bedrock model ID |
 | `--region` | No | `AWS_REGION`, else `us-east-1` | AWS region for Bedrock |
 | `--effort` | No | model default | `low`, `medium` or `high`: reasoning effort for Claude models that support it |

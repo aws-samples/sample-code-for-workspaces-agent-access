@@ -21,8 +21,11 @@ from urllib.parse import quote
 
 ENV_SAML_ASSERTION = "AGENTACCESS_SAML_ASSERTION"
 
+# A Region and a stack name as they appear in a stack ARN; lib/streaming_url.py checks the same two.
+REGION_PATTERN = r"[a-z0-9-]+"
+STACK_NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.-]*"
 # arn:aws:appstream:<region>:<12-digit account>:stack/<name> (any partition)
-_STACK_ARN = re.compile(r"arn:aws[a-z-]*:appstream:[a-z0-9-]+:\d{12}:stack/[A-Za-z0-9][A-Za-z0-9_.-]*")
+_STACK_ARN = re.compile(rf"arn:aws[a-z-]*:appstream:(?P<region>{REGION_PATTERN}):\d{{12}}:stack/(?P<name>{STACK_NAME_PATTERN})")
 # Standard or URL-safe base64, which is what an IdP hands back for a SAML Response.
 _BASE64 = re.compile(r"[A-Za-z0-9+/_-]+={0,2}")
 
@@ -44,6 +47,14 @@ def is_plausible_assertion(text):
 
 def is_valid_stack_arn(text):
     return bool(_STACK_ARN.fullmatch(text))
+
+
+def parse_stack_arn(arn):
+    """Return ``(region, stack_name)`` from a stack ARN; raises ValueError if it isn't one."""
+    match = _STACK_ARN.fullmatch(arn)
+    if match is None:
+        raise ValueError(f"not a WorkSpaces Applications stack ARN: {arn!r}")
+    return match["region"], match["name"]
 
 
 def _shown(value):
