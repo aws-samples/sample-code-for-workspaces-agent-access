@@ -237,7 +237,7 @@ Optional flags:
 - `--profile <name>` — use a specific AWS profile
 - `--region <region>` — match your fleet's region
 - `--metadata "aws.agentaccess/streamingSessionUrl=<URL>"` — pass an explicit streaming URL
-- `--header "X-Amzn-AgentAccess-Workspaces-Applications-Stack-Arn=<ARN>"` — connect to a domain-joined fleet without a SAML assertion (see [Domain-joined fleets without a SAML assertion](#domain-joined-fleets-without-a-saml-assertion)); use `--header`, not `--metadata`, so the ARN is covered by the SigV4 signature
+- `--header "X-Amzn-AgentAccess-Workspaces-Applications-Stack-Arn=<ARN>"` — connect to a domain-joined fleet without a SAML assertion (see [Domain-joined fleets without a SAML assertion](#domain-joined-fleets-without-a-saml-assertion)); use `--header`, not `--metadata`, so the ARN is covered by the SigV4 signature. `--header` needs `mcp-proxy-for-aws` 1.7.0 or later (for example `"args": ["--from", "mcp-proxy-for-aws==1.7.0", "mcp-proxy-for-aws", ...]`)
 
 ### Pattern 3: Remote MCP Server with OAuth and Your IdP Sign-In URL
 
