@@ -110,6 +110,34 @@ Things to know:
 - Supported by `generic_cua`, `application_validation` and `mcp_forwarding_demo`. The other samples (`quickstart.py`, the AgentCore sample) take a streaming URL only.
 - A live domain-joined fleet accepted the `_meta` keys this sample sends (`aws.agentaccess/workspacesApplicationsSamlAssertion` and `aws.agentaccess/workspacesApplicationsStackArn`). The AWS developer guide's example uses other names (`saml_response` / `stack_arn`), which were not tried here.
 
+#### Without a SAML assertion (federated identity)
+
+The service can also sign in to the desktop as the AD user of the federated AWS identity that signs the MCP requests. The client then sends only the stack ARN, in the `aws.agentaccess/workspacesApplicationsStackArn` `_meta` key or the `X-Amzn-AgentAccess-Workspaces-Applications-Stack-Arn` header, and no SAML assertion. The demo agents don't support this yet; use any MCP client that signs with your own credentials, such as `mcp-proxy-for-aws` (see [AGENTS.md](AGENTS.md#domain-joined-fleets-without-a-saml-assertion)). Pass the ARN with `--header`, which the SigV4 signature covers, not `--metadata`, which edits the body after signing:
+
+```bash
+mcp-proxy-for-aws https://agentaccess-mcp.us-east-1.api.aws/mcp \
+    --service agentaccess-mcp --region us-east-1 \
+    --profile my-federated-role \
+    --header "X-Amzn-AgentAccess-Workspaces-Applications-Stack-Arn=arn:aws:appstream:us-east-1:123456789012:stack/MyDJStack"
+```
+
+The signing identity must be a role session federated from your IdP, with the AD user in two session tags, `UserPrincipalName` and `ObjectSid`. The role's trust policy must allow `sts:TagSession`. Either kind of IdP works:
+
+- **SAML.** The IdP sends the tags as `https://aws.amazon.com/SAML/Attributes/PrincipalTag:UserPrincipalName` and `https://aws.amazon.com/SAML/Attributes/PrincipalTag:ObjectSid` attributes, and the role is assumed with `AssumeRoleWithSAML`.
+- **OIDC.** The IdP puts the tags in the token's `https://aws.amazon.com/tags` claim, and the role is assumed with `AssumeRoleWithWebIdentity`. An AWS CLI profile with `role_arn` and `web_identity_token_file` does this for you:
+
+  ```ini
+  [profile my-federated-role]
+  role_arn = arn:aws:iam::123456789012:role/MyDJAgentRole
+  web_identity_token_file = /path/to/oidc-token.jwt
+  ```
+
+- **On-behalf-of (OBO).** For an agent acting for a signed-in user, exchange the user's token for one issued to the agent, with [Okta On-Behalf-Of Token Exchange](https://developer.okta.com/docs/guides/set-up-token-exchange/main/) (RFC 8693) or [Microsoft Entra OBO](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-on-behalf-of-flow), then use the exchanged access token as the OIDC token above. Configure the IdP to put the tags claim on the exchanged token; on Entra that is a claims-mapping policy on the resource app, and on Okta a claim on a custom authorization server. The service takes the AD user from the tags, never from the token's `sub`.
+
+See [Passing session tags in AWS STS](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_session-tags.html) for both claim formats.
+
+Prerequisites: AD-joined fleet; an IAM SAML or OIDC identity provider for your IdP; an IAM role that trusts the provider, allows `sts:TagSession`, and is allowed to call Agent Access on the stack. The stack must be in the caller's account.
+
 ## Create Your Own Agent
 There's a library provided in `lib/agent_common.py` that you can use to create your own agent. We've also provided an agent creator with prompts to describe your workflow:
 ```bash
