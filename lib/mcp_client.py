@@ -14,7 +14,8 @@ import re
 import sys
 import threading
 import weakref
-from datetime import timedelta
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 
 import anyio
 import httpx2
@@ -193,16 +194,66 @@ def _http_client(headers=None, timeout=None, auth=None):
     return client
 
 
-def _is_initialize(request):
+def _jsonrpc_method(request):
+    """The JSON-RPC method of an HTTP request to the MCP endpoint, or None."""
     try:
         message = json.loads(request.content)
     except ValueError:
-        return False
-    return isinstance(message, dict) and message.get("method") == "initialize"
+        return None
+    return message.get("method") if isinstance(message, dict) else None
+
+
+@dataclass(frozen=True)
+class ServerSession:
+    """An MCP session the server assigned in this process: its ID, when the ID first came back (UTC), and
+    whether a tool call was sent on it. A session that never sent one, such as a connection attempt that
+    was retried, may have nothing to record."""
+    session_id: str
+    first_seen: datetime
+    ran_tools: bool
+
+
+class _ServerSessions:
+    """The MCP sessions the server assigned in this process, oldest first. Thread-safe: they are recorded
+    on the MCP clients' background threads and read on the main thread."""
+
+    def __init__(self, clock=lambda: datetime.now(timezone.utc)):
+        self._sessions = {}
+        self._lock = threading.Lock()
+        self._clock = clock
+
+    def add(self, session_id, ran_tools=False):
+        if not session_id:
+            return
+        with self._lock:
+            if session_id not in self._sessions:
+                self._sessions[session_id] = ServerSession(session_id, self._clock(), False)
+        if ran_tools:
+            self.mark_ran_tools(session_id)
+
+    def mark_ran_tools(self, session_id):
+        with self._lock:
+            known = self._sessions.get(session_id)
+            if known is not None and not known.ran_tools:
+                self._sessions[session_id] = replace(known, ran_tools=True)
+
+    def snapshot(self):
+        with self._lock:
+            return tuple(self._sessions.values())
+
+
+_server_sessions = _ServerSessions()
+
+
+def server_sessions():
+    """The MCP sessions the server assigned in this process, oldest first, closed ones included: the
+    ``Mcp-Session-Id`` of each stateful connection attempt and each stateless ``mcpSessionId``."""
+    return _server_sessions.snapshot()
 
 
 @contextlib.asynccontextmanager
-async def _end_session_on_failure(endpoint, connect, http_client_factory=_http_client, on_message=None):
+async def _end_session_on_failure(endpoint, connect, http_client_factory=_http_client, on_message=None,
+                                  sessions=_server_sessions):
     """Open the transport ``connect(http_client_factory)``; if it fails, end its MCP session with a DELETE.
 
     mcp sends the closing DELETE from inside the transport's task group, so when a request fails there
@@ -215,6 +266,9 @@ async def _end_session_on_failure(endpoint, connect, http_client_factory=_http_c
 
     ``on_message`` sees every JSON-RPC message the server sends, so the client can record the
     mcpSessionId of a stateless session from errors too (error.data), which strands does not pass on.
+
+    ``sessions`` records the session id of a stateful session as soon as the initialize response
+    arrives, and marks it once a tools/call runs on it (by default for ``server_sessions``).
     """
     clients, seen = [], {}
 
@@ -224,11 +278,20 @@ async def _end_session_on_failure(endpoint, connect, http_client_factory=_http_c
             seen["version"] = request.headers["mcp-protocol-version"]
         if request.method == "DELETE":
             seen["deleted"] = True
-        elif response.headers.get("mcp-session-id") and _is_initialize(request):
+        elif (response.headers.get("mcp-session-id") and request.method == "POST"
+              and _jsonrpc_method(request) == "initialize"):
             seen["session"] = response.headers["mcp-session-id"]
+            sessions.add(seen["session"])
+
+    async def mark_tool_call(request):
+        # On the request, not the response: a tool call that times out may still have been recorded.
+        if request.method == "POST" and request.headers.get("mcp-session-id") \
+                and _jsonrpc_method(request) == "tools/call":
+            sessions.mark_ran_tools(request.headers["mcp-session-id"])
 
     def recording_factory(headers=None, timeout=None, auth=None):
         client = http_client_factory(headers=headers, timeout=timeout, auth=auth)
+        client.event_hooks.setdefault("request", []).append(mark_tool_call)
         client.event_hooks.setdefault("response", []).insert(0, remember)   # before the status is rewritten
         clients.append(client)
         return client
@@ -478,7 +541,8 @@ class _SanitizedMCPClient(MCPClient):
 
     tool_timeout = None
 
-    def __init__(self, transport_callable, *args, mcp_protocol=MCP_PROTOCOL_STATELESS, **kwargs):
+    def __init__(self, transport_callable, *args, mcp_protocol=MCP_PROTOCOL_STATELESS,
+                 sessions=_server_sessions, **kwargs):
         if getattr(transport_callable, "records_session_ids", False) is True:
             transport_callable = functools.partial(transport_callable, on_message=self._record_message)
         super().__init__(transport_callable, *args, **kwargs)
@@ -490,6 +554,10 @@ class _SanitizedMCPClient(MCPClient):
         # two sessions with parallel NEW calls.
         self._session_lock = threading.Lock()
         self._mcp_session_ids = []
+        # Records each stateless mcpSessionId the server returns, and is not undone on close_session (by default
+        # for server_sessions): the recording of a closed session is delivered after it closes. The interceptor
+        # adds mcpSessionId only to tools/call results (and their errors), so its session ran a tool call.
+        self._sessions = sessions
 
     def start(self):
         token = _FORCE_STATEFUL.set(self._mcp_protocol == MCP_PROTOCOL_STATEFUL)
@@ -548,6 +616,7 @@ class _SanitizedMCPClient(MCPClient):
             if session_id in self._mcp_session_ids:
                 return
             self._mcp_session_ids.append(session_id)
+        self._sessions.add(session_id, ran_tools=True)
         sys.stdout.write(f"  MCP session (stateless): {session_id}\n")
         sys.stdout.flush()
 

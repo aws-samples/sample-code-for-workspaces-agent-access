@@ -9,8 +9,56 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 from lib import agent_common
+from lib import mcp_client
+from lib import replay_session
+from lib import streaming_url
 from lib import terminal_ui
 from lib.agent_factory import RunInterrupted, RunLimitReached
+from lib.saml_assertion import parse_stack_arn
+
+
+def checked_replay_delivery(parser, args):
+    """Where --save-replay looks for recordings, or None without --save-replay.
+
+    Checked before the task runs, so a wrong stack, region or profile is reported up front. Exits
+    through ``parser.error`` when the stack can't be told or its bucket can't be read.
+    """
+    if not args.save_replay:
+        return None
+    delivery = _delivery_target(parser, args)
+    try:
+        replay_session.check_delivery(delivery)
+    except replay_session.RecordingNotRetrieved as exc:
+        parser.error(f"--save-replay: {exc}")
+    return delivery
+
+
+def _delivery_target(parser, args):
+    """The stack the desktop runs on, in its own Region: the --stack-arn stack on Domain Join, else the
+    stack the --streaming-url was created for. It is read with the --mcp-profile identity (the stack
+    is in its account). Exits through ``parser.error`` when the stack can't be told."""
+    try:
+        if args.stack_arn:
+            region, stack_name = parse_stack_arn(args.stack_arn)
+        else:
+            region, stack_name = streaming_url.stack_of(args.streaming_url)
+    except ValueError as exc:
+        parser.error(f"--save-replay: {exc}")
+    return replay_session.DeliveryBucket(region=region, stack_name=stack_name, profile=args.mcp_profile)
+
+
+def finalize_and_save_replay(agent_logger, delivery, success, error, result=None,
+                             wait_seconds=replay_session.DEFAULT_WAIT_SECONDS):
+    """End the MCP session and write the metrics; with a ``delivery`` bucket, then download the run's
+    recordings, waiting up to ``wait_seconds`` in all for the sessions that ran a tool call.
+
+    Returns the task's exit code: a recording that doesn't arrive is reported with the command to
+    fetch it later, and doesn't change it.
+    """
+    exit_code = agent_common.finalize_and_exit(agent_logger, success, error, result)
+    if delivery:
+        replay_session.save_recordings(delivery, mcp_client.server_sessions(), wait_seconds)
+    return exit_code
 
 
 def main():
@@ -24,8 +72,13 @@ def main():
     parser.add_argument('--plain', action='store_true', default=False,
                        help='Interactive sessions: plain text output instead of the terminal interface '
                             '(always plain when input or output is not a terminal)')
+    parser.add_argument('--save-replay', action='store_true', default=False,
+                       help='After the session ends, wait for its Replay Session recording and download it '
+                            'to recordings/<session-id>/ (the stack needs Replay Session on: '
+                            'scripts/setup_replay_session.sh)')
     args = parser.parse_args()
     agent_common.resolve_session_auth(parser, args)
+    delivery = checked_replay_delivery(parser, args)
 
     agent_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -100,7 +153,8 @@ def main():
         extra_hooks=[ui] if ui else (),
     )
     if agent is None:
-        return agent_common.finalize_and_exit(setup["agent_logger"], False, error)
+        # every session was a failed connection attempt: check for recordings once, without waiting
+        return finalize_and_save_replay(setup["agent_logger"], delivery, False, error, wait_seconds=0)
 
     # Execute
     success = False
@@ -142,10 +196,8 @@ def main():
                 print()
                 break
 
-    return agent_common.finalize_and_exit(
-        setup["agent_logger"], success, error,
-        result if task_prompt else None,
-    )
+    return finalize_and_save_replay(setup["agent_logger"], delivery, success, error,
+                                    result if task_prompt else None)
 
 
 if __name__ == "__main__":

@@ -61,6 +61,49 @@ python3 agents/generic_cua/agent.py --streaming-url "$STREAMING_URL"
 python3 agents/mcp_forwarding_demo/agent.py --streaming-url "$STREAMING_URL"
 ```
 
+### Replay Session
+
+Replay Session records what an agent does on a stack and, after the session ends, delivers a video, a transcript, and a report to your own S3 bucket for review. It works with any agent: the agent needs no changes to be recorded.
+
+1. Turn it on for the stack that `setup.sh` deploys. The script creates a private recordings bucket (re-applying its settings on a re-run), or reuses the one in the stack's `S3BucketArn` (which screenshot uploads also use), and sets `ReplaySessionEnabled`. When the stack is updated, WorkSpaces Applications checks that it can list the bucket, so the script's bucket policy allows `s3:ListBucket` for `appstream.amazonaws.com` from your account; a bucket you pass with `--bucket` needs the same statement. Pass `--kms` to also create a customer managed key for the captured frames; on a re-run the key is reused and its policy is replaced.
+
+   ```bash
+   ./scripts/setup_replay_session.sh --region us-east-1
+   ```
+
+2. Run the agent with `--save-replay`. Before the task starts, it checks that it can read the stack's recordings bucket, and stops with the reason if it can't. When the task is done, or when you exit an interactive session, the agent ends its MCP session, which starts delivery, then waits for the recording (usually about a minute for a short session, up to 10 minutes), downloads it to `recordings/<id>/`, and prints the session summary and each recorded action.
+
+   ```bash
+   STREAMING_URL=$(scripts/streaming_url.sh)
+   python3 agents/generic_cua/agent.py --streaming-url "$STREAMING_URL" --expire-session-on-exit --save-replay
+   ```
+
+   The bucket is read from the `S3BucketArn` of the stack the streaming URL was created for, in that stack's Region, both read from the URL (or of the `--stack-arn` stack on a domain-joined fleet). If the agent used more than one MCP session (a retried connection, or new stateless sessions during the run), each session that ran a tool call is saved too, within the same 10-minute wait. Open `replay_session_report.html` in a browser to play the video alongside the transcript.
+
+3. If the recording hasn't arrived when the agent gives up, or you press Ctrl-C while it waits, it prints a `scripts/get_replay_session.py` command; run it later. The script also fetches recordings of other agents' sessions by their MCP session ID (each run of this repo's agents prints `MCP server session: <id>`, or `MCP session (stateless): <id>` over stateless MCP):
+
+   ```bash
+   python3 scripts/get_replay_session.py --session-id <id> --region us-east-1
+   ```
+
+   It reads the bucket the same way (pass `--stack-name` or `--bucket` for another stack) and searches yesterday's and today's partitions, so pass `--session-date YYYY-MM-DD` (UTC) for an older session; that day and the day before are searched. The command the agent prints already has it.
+
+The recording is delivered under `agentaccess/replay-session/year=YYYY/month=MM/day=DD/<id>/`, where the date is the session's start date in UTC:
+
+| File | What it is |
+|---|---|
+| `replay_session_video.mp4` | Screen recording of the session, one frame per action |
+| `replay_session_transcript.json` | Each action (tool and arguments) with an AI-generated description of its intent, plus a session summary |
+| `replay_session_report.html` | Self-contained report that plays the video next to a searchable transcript |
+
+- **Your own agent:** if it isn't built on this repo's `lib/`, get the ID from the `mcpSessionId` field of the `get_session_info` tool. End the MCP session when the agent finishes (HTTP `DELETE` over stateful MCP, `close_session` over stateless), so delivery starts.
+- **Blocked actions:** capture is fail-closed. If a frame can't be recorded, the action doesn't run and the tool returns an error starting with `Replay Session enabled but action blocked`. Retrying won't help; when the message names a KMS error, fix the key policy of the stack's `KmsKeyArn`. Tell your agent to report the error and stop.
+- **Recordings contain everything on screen and everything the agent types.** Keep the bucket private, scope who can read `agentaccess/replay-session/`, and don't give the agent tasks that type secrets.
+- **Delivered files use the bucket's default encryption.** A `KmsKeyArn` on the stack protects the captured frames while they're processed; it isn't applied to the delivered files. To encrypt recordings with your own key, set SSE-KMS as the bucket's default encryption.
+- **A `replay_fallback_content/` folder** means processing failed; it holds the raw frames and per-action metadata instead of the video. Its files are uploaded in parallel with no marker for the last one, so the agent saves them once the listing stops changing; fetch them again later to be sure you have every file.
+- **No recording?** Check that the stack's `ReplaySessionEnabled` is `true` and that the session started after it was turned on; the setting applies to new sessions only.
+- **Permissions:** reading the recording needs `appstream:DescribeStacks` on the stack (unless you pass `--bucket`) and `s3:ListBucket` and `s3:GetObject` on the delivery prefix.
+
 ### MCP tool forwarding
 
 Fleets can expose additional tools beyond desktop interaction via MCP tool forwarding. When enabled, `tools/list` returns both desktop tools (`screenshot`, `left_click`, etc.) and forwarded tools (prefixed with `forwarded___`). These forwarded tools call external APIs or services configured on the fleet — your agent uses them like any other MCP tool.
@@ -303,6 +346,8 @@ sample-code-for-workspaces-agent-access/
 │   ├── computer_tool.py        # Claude's typed computer tools for the Anthropic interfaces; how their calls are logged
 │   ├── computer_use_interface.py  # Computer-use interfaces converted by the service (--computer-use-interface)
 │   ├── wait_tool.py            # Local wait tool until the service offers one
+│   ├── replay_session.py       # Find and download Replay Session recordings (--save-replay)
+│   ├── streaming_url.py        # Stack and Region a streaming URL was created for (--save-replay)
 │   ├── terminal_ui.py          # generic_cua's interactive terminal
 │   └── strands_logger.py       # Metrics and logging
 ├── scripts/
@@ -310,6 +355,8 @@ sample-code-for-workspaces-agent-access/
 │   ├── setup.sh                # One-step setup (macOS / Linux)
 │   ├── setup.ps1               # One-step setup (Windows)
 │   ├── streaming_url.sh        # Mint a fresh WorkSpaces Applications streaming URL
+│   ├── setup_replay_session.sh # Turn on Replay Session for the stack
+│   ├── get_replay_session.py   # Download a session's Replay Session recording
 │   ├── deploy.sh               # Deploy VPC + Fleet + Stack
 │   ├── cleanup.sh              # Tear down all resources
 │   ├── deploy_agentcore.sh     # Deploy agent to Bedrock AgentCore Runtime
