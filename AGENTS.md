@@ -59,6 +59,16 @@ X-Amzn-AgentAccess-Streaming-Session-Url: <streaming-url>
 
 A domain-joined fleet has no streaming URL. The client sends a SAML assertion and the stack ARN in the JSON-RPC `_meta` of every request instead, and must add them **before** signing: the SigV4 signature covers the body. `lib/domain_join_auth.py` does this: it adds `_meta` to each request first, then hands it to the SigV4 signer. The `_meta` keys are `aws.agentaccess/workspacesApplicationsSamlAssertion` and `aws.agentaccess/workspacesApplicationsStackArn`; a live domain-joined fleet accepted them. A request that carries an expired assertion is refused (HTTP 400, `SAML assertion has expired`), and this sample re-sends the assertion it started with, so it stops working when that assertion expires. The public developer guide's example uses other key names (not tried here) and recommends `metadata=`, which cannot work with SigV4 because it edits the body after signing. See "Domain Join" in the README.
 
+### Domain-joined fleets without a SAML assertion
+
+A domain-joined fleet can also be reached with the stack ARN alone, as a header or in `params._meta`, and no SAML assertion:
+
+```
+X-Amzn-AgentAccess-Workspaces-Applications-Stack-Arn: arn:aws:appstream:<region>:<account>:stack/<stack>
+```
+
+The service signs in to the desktop as the AD user of the identity that signs the request, so sign with a role session federated from your IdP (`AssumeRoleWithSAML` or `AssumeRoleWithWebIdentity`) that carries the AD user in the `UserPrincipalName` and `ObjectSid` session tags. An agent acting for a user can get that token from an on-behalf-of exchange. Send the stack ARN on every request in exactly one place, the header or `_meta`; a request with both is rejected with HTTP 400. The stack must be in the caller's account. See the README's Domain Join section for the SAML attributes, the OIDC token claim, OBO and an AWS CLI profile example.
+
 ## Available MCP Tools
 
 The MCP server exposes these tools for desktop interaction:
@@ -227,6 +237,21 @@ Optional flags:
 - `--profile <name>` — use a specific AWS profile
 - `--region <region>` — match your fleet's region
 - `--metadata "aws.agentaccess/streamingSessionUrl=<URL>"` — pass an explicit streaming URL
+- `--header "X-Amzn-AgentAccess-Workspaces-Applications-Stack-Arn=<ARN>"` — connect to a domain-joined fleet without a SAML assertion (see [Domain-joined fleets without a SAML assertion](#domain-joined-fleets-without-a-saml-assertion)); use `--header`, not `--metadata`, so the ARN is covered by the SigV4 signature. `--header` needs `mcp-proxy-for-aws` 1.7.0 or later (for example `"args": ["--from", "mcp-proxy-for-aws==1.7.0", "mcp-proxy-for-aws", ...]`)
+
+### Pattern 3: Remote MCP Server with OAuth and Your IdP Sign-In URL
+
+MCP clients that support remote servers with OAuth (for example Claude Desktop and Kiro) can connect without `mcp-proxy-for-aws`. If your AWS access comes from a SAML IdP, add your IdP's AWS sign-in URL to the server URL as `login_hint`:
+
+```
+https://agentaccess-mcp.us-east-1.api.aws/mcp?login_hint=<percent-encoded IdP sign-in URL>
+```
+
+When the client signs in, AWS Sign-In shows the IdP URL and asks you to continue, then sends you to your IdP. After you sign in and pick a role, choose the session for the client on the AWS sessions page, and the client gets a token for that role. Sign-In skips the first page for a URL you continued to in the same browser within the last 30 days.
+
+- Use the IdP's IdP-initiated AWS sign-in link (for example your Okta or Entra AWS app link). It must be an `https://` URL of at most 1,024 characters.
+- Percent-encode the URL if it has its own query string, so its `&` isn't read as part of the server URL.
+- IAM Identity Center portal URLs aren't supported; sign in with the client's default flow instead.
 
 ## Best Practices for Agent Prompts
 
