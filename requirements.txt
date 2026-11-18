@@ -97,7 +97,7 @@ mdurl==0.1.2
     # via markdown-it-py
 openai==2.35.1
     # via strands-agents
-opentelemetry-api==1.45.1
+opentelemetry-api==1.45.2
     # via
     #   mcp
     #   opentelemetry-instrumentation
@@ -105,13 +105,13 @@ opentelemetry-api==1.45.1
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   strands-agents
-opentelemetry-instrumentation==0.66b1
+opentelemetry-instrumentation==0.66b2
     # via opentelemetry-instrumentation-threading
-opentelemetry-instrumentation-threading==0.66b1
+opentelemetry-instrumentation-threading==0.66b2
     # via strands-agents
-opentelemetry-sdk==1.45.1
+opentelemetry-sdk==1.45.2
     # via strands-agents
-opentelemetry-semantic-conventions==0.66b1
+opentelemetry-semantic-conventions==0.66b2
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-sdk
