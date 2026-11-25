@@ -137,7 +137,7 @@ python-dateutil==2.9.0.post0
     # via botocore
 python-multipart==0.0.31
     # via mcp
-pywin32==311 ; sys_platform == 'win32'
+pywin32==312 ; sys_platform == 'win32'
     # via mcp
 pyyaml==6.0.3
     # via strands-agents
