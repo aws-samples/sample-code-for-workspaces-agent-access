@@ -201,7 +201,7 @@ typing-inspection==0.4.5
     #   pydantic
 urllib3==2.8.0
     # via botocore
-uvicorn==0.46.0 ; sys_platform != 'emscripten'
+uvicorn==0.54.0 ; sys_platform != 'emscripten'
     # via mcp
 watchdog==6.0.0
     # via strands-agents
